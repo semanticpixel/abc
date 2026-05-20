@@ -9,7 +9,7 @@ Personal Claude Code marketplace shipping the **abc** plugin: a tight, opinionat
 Two parallel tracker families:
 
 - **Linear-flavored** (no suffix): `scaffold-sub-issues`, `ship-issue`, `ship-epic` — for work projects.
-- **GitHub-flavored** (`-gh` suffix): same skills against GitHub Issues — for personal projects. Currently planned in `PLAN-gh.md`; not yet implemented.
+- **GitHub-flavored** (`-gh` suffix): same skills against GitHub Issues — for personal projects. The label scheme, task-list fence, and marker comments shared across the `-gh` family are documented in `plugins/abc/skills/scaffold-sub-issues-gh/github-conventions.md`.
 
 The `plan`, `pr`, `review`, `review-sweep` skills are tracker-agnostic; they don't have `-gh` siblings.
 
@@ -19,15 +19,20 @@ The `plan`, `pr`, `review`, `review-sweep` skills are tracker-agnostic; they don
 abc/
 ├── README.md                            ← user-facing overview
 ├── CLAUDE.md                            ← this file
-├── PLAN-gh.md                           ← active plan for -gh siblings (in flight)
+├── examples/                            ← sample artifacts (PLAN docs etc.)
+├── scripts/validate-plugin.py           ← manifest + frontmatter validator
+├── .github/workflows/validate.yml       ← runs the validator on push / PR
 ├── .claude-plugin/marketplace.json      ← marketplace manifest
 └── plugins/abc/                         ← the plugin
     ├── .claude-plugin/plugin.json       ← plugin manifest
     ├── skills/                          ← each subdir is one skill
     │   ├── plan/                        ← /abc:plan
-    │   ├── scaffold-sub-issues/         ← /abc:scaffold-sub-issues
+    │   ├── scaffold-sub-issues/         ← /abc:scaffold-sub-issues (Linear)
+    │   ├── scaffold-sub-issues-gh/      ← /abc:scaffold-sub-issues-gh (GitHub)
     │   ├── ship-issue/                  ← /abc:ship-issue (Linear)
+    │   ├── ship-issue-gh/               ← /abc:ship-issue-gh (GitHub)
     │   ├── ship-epic/                   ← /abc:ship-epic (Linear)
+    │   ├── ship-epic-gh/                ← /abc:ship-epic-gh (GitHub)
     │   ├── pr/                          ← /abc:pr (tracker-agnostic)
     │   ├── review/                      ← /abc:review
     │   └── review-sweep/                ← /abc:review-sweep
@@ -83,13 +88,10 @@ Hooks live at `plugins/abc/hooks/`. Pattern:
 1. `README.md` — full lifecycle, skill table, install flow.
 2. The specific skill's `SKILL.md` — implementation contract.
 3. That skill's `DESIGN.md` if it exists — architectural rationale.
-4. `PLAN-gh.md` — active plan for the GitHub-Issues sibling skills.
+4. `plugins/abc/skills/scaffold-sub-issues-gh/github-conventions.md` — shared conventions across the `-gh` family.
 
 ## Files NOT to edit lightly
 
 - `.claude-plugin/marketplace.json`'s `metadata.version` field — that's the marketplace's own version (currently `0.1.0`), separate from the plugin's version. Touch only when the marketplace structure itself changes.
 - `plugins/abc/agents/reviewer.md` and `triage.md` — subagents under a tight read-only-by-contract design. Changes here propagate to `/abc:review` and `/abc:review-sweep` behavior; review the orchestrating skills first.
-
-## Currently in-flight work
-
-- **`PLAN-gh.md`** — three new `-gh` skills (`scaffold-sub-issues-gh`, `ship-issue-gh`, `ship-epic-gh`) for GitHub-Issues-based personal projects. Plan ready; implementation deferred to a future session.
+- `plugins/abc/skills/scaffold-sub-issues-gh/github-conventions.md` — load-bearing across all three `-gh` skills. Changes to label names, the task-list fence, or marker-comment formats break all of them simultaneously.

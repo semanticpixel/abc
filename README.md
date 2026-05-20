@@ -29,7 +29,7 @@ A personal workflow toolkit for Claude Code: a tight, opinionated set of slash c
 
 Each step in the pipeline produces an artifact the next step consumes. No state lives in shell history or chat memory — **the tracker (Linear or GitHub Issues) and the git remote are the source of truth**, so any step can resume across sessions, machines, or days.
 
-Pick the family by tracker: the unsuffixed skills target Linear; the `-gh` siblings target GitHub Issues. `plan`, `pr`, `review`, and `review-sweep` are tracker-agnostic and shared by both. The `-gh` family is being built out — see `PLAN-gh.md` for the multi-PR rollout.
+Pick the family by tracker: the unsuffixed skills target Linear; the `-gh` siblings target GitHub Issues. `plan`, `pr`, `review`, and `review-sweep` are tracker-agnostic and shared by both.
 
 ---
 
@@ -43,6 +43,7 @@ Pick the family by tracker: the unsuffixed skills target Linear; the `-gh` sibli
 | `/abc:ship-issue <TICKET\|list\|parent\|milestone:uuid>` | Drives a Linear issue (or list / parent / milestone) from Backlog to Done through the implement → PR → address-review → merge loop. Self-arms its own `/loop` — invoke once and walk away. |
 | `/abc:ship-issue-gh <<owner>/<repo>#<n>\|list\|parent\|milestone:<owner>/<repo>/<num>>` | GitHub-Issues sibling. Same self-arming loop, same state machine + escape hatches, but drives GitHub issues using the label/task-list conventions from `scaffold-sub-issues-gh/github-conventions.md`. GitHub-only — GitLab repos go through `/abc:ship-issue` instead. |
 | `/abc:ship-epic <PARENT-ID>` | Coordinator for parent issues with multi-repo sub-issues. Builds a dependency graph from `blocks`/`blocked by` relations, fires `/loop /abc:ship-issue <SUB-ID>` per ready sub-issue (truly parallel via independent cron entries), gates blocked sub-issues, aggregates status to the parent. See `plugins/abc/skills/ship-epic/DESIGN.md` for the architectural rationale. |
+| `/abc:ship-epic-gh <<owner>/<repo>#<n>>` | GitHub-Issues sibling. Coordinator for a GitHub parent issue with a managed `## Sub-issues` task-list. Builds the dependency graph from `blocks:#N` / `blocked-by:#N` labels on the children, fires `/loop /abc:ship-issue-gh <owner>/<repo>#<n>` per ready child, gates blocked children, aggregates status. Single-host (github.com OR Enterprise) per invocation. |
 | `/abc:pr [title-hint]` | Local change → PR/MR. Inspects the diff, groups related files, runs type-check + tests, commits with no AI attribution, pauses for confirmation, opens the PR/MR. Detects GitHub vs GitLab automatically. |
 | `/abc:review <url\|number>` | Review a single PR or MR with craft-level attention: semantic HTML, CSS architecture (tokens, logical properties, `light-dark()`), accessibility, TypeScript patterns, code quality. Proposes inline comments, shows them for approval, posts only what you confirm. Auto-detects platform from URL or git remote. |
 | `/abc:review-sweep [github\|gitlab\|both]` | Scans your open PRs/MRs across platforms, dispatches each unresolved reviewer comment to the `triage` subagent, presents a dashboard, and applies confirmed fixes per PR/MR. Designed to compose with `/loop 30m /abc:review-sweep` for unattended sweeps. |
@@ -100,11 +101,9 @@ Install only what's needed for the skills you'll actually use — every dependen
 | Skill | Required |
 |---|---|
 | `/abc:scaffold-sub-issues`, `/abc:ship-issue`, `/abc:ship-epic` | Linear MCP (`claude_ai_Linear`) connected and authed |
-| `/abc:scaffold-sub-issues-gh`, `/abc:ship-issue-gh` | `gh` CLI (>= 2.40) authed for the target host. No Linear required. |
+| `/abc:scaffold-sub-issues-gh`, `/abc:ship-issue-gh`, `/abc:ship-epic-gh` | `gh` CLI (>= 2.40) authed for the target host. No Linear required. |
 | `/abc:review`, `/abc:review-sweep` (GitLab paths only) | GitLab MCP (`mcp__gitlab__*`) |
 | `/abc:plan`, `/abc:pr`, `/abc:review` (GitHub paths) | None — local files + `gh` CLI |
-
-> `ship-epic-gh` (the coordinator that fans out parallel `ship-issue-gh` workers) is the last `-gh` sibling still in flight — see `PLAN-gh.md`. Until it lands, parallelism across a GitHub parent's children needs to be driven manually by invoking `/abc:ship-issue-gh` per child.
 
 ### Platform CLIs
 
@@ -213,7 +212,10 @@ abc/                                  ← marketplace root
         │   │   ├── SKILL.md
         │   │   ├── DESIGN.md
         │   │   └── README.md
-        │   └── ship-epic/
+        │   ├── ship-epic/
+        │   │   ├── SKILL.md
+        │   │   └── DESIGN.md
+        │   └── ship-epic-gh/
         │       ├── SKILL.md
         │       └── DESIGN.md
         ├── agents/
