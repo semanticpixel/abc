@@ -1,4 +1,4 @@
-# ABC — Always Be Cooking
+# ABC — Always Be Cooking 🍳
 
 A personal workflow toolkit for Claude Code: a tight, opinionated set of slash commands and subagents that take a feature from **idea → plan → tracker issues → parallel shipping → review → merge** with the fewest possible re-explanations. Backed by either Linear or GitHub Issues — pick by tracker, not auto-detect.
 
