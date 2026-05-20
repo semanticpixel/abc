@@ -181,6 +181,12 @@ claude plugin install abc@abc
 abc/                                  ← marketplace root
 ├── README.md                         ← this file
 ├── .claude-plugin/marketplace.json   ← marketplace manifest
+├── examples/                         ← sample artifacts (see below)
+│   └── PLAN-avatar-component.md
+├── scripts/
+│   └── validate-plugin.py            ← manifest + frontmatter validator
+├── .github/workflows/
+│   └── validate.yml                  ← runs the validator on push / PR
 └── plugins/
     └── abc/                          ← plugin root
         ├── .claude-plugin/plugin.json
@@ -204,6 +210,14 @@ abc/                                  ← marketplace root
             ├── hooks.json
             └── stay-awake.sh
 ```
+
+---
+
+## Examples
+
+| File | Shows |
+|---|---|
+| [`examples/PLAN-avatar-component.md`](./examples/PLAN-avatar-component.md) | A canonical multi-repo PLAN — the exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. Three sub-tasks across two repos, a dependency graph, a `## Validation` block that becomes the `blocked-verify` gate in `/abc:ship-issue`. |
 
 ---
 
