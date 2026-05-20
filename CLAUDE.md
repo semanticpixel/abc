@@ -59,13 +59,13 @@ abc/
 2. Bump the version in **both** manifests — they must stay in sync:
    - `plugins/abc/.claude-plugin/plugin.json` → the plugin's version
    - `.claude-plugin/marketplace.json` → the plugin entry's version (NOT `metadata.version`)
-3. Bump rules:
-   - **MINOR** for new skills, new hooks, or breaking changes to a skill's contract
-   - **PATCH** for prompt tightening, bug fixes, doc edits
-   - **MAJOR** only when the lifecycle contract itself changes (renamed/removed skill that breaks downstream pointers)
+3. Bump rules (**every user-visible change ships in a versioned release** — don't accumulate docs/CI under `[Unreleased]`; `claude plugin update` is a no-op when the version hasn't moved):
+   - **MINOR** for new skills, new hooks, or breaking changes to a skill's contract.
+   - **PATCH** for anything else a user-installer should see — prompt edits, README/CHANGELOG/CLAUDE.md changes, example files, CI tooling that affects published validation, bug fixes.
+   - **MAJOR** only when the lifecycle contract itself changes (renamed/removed skill that breaks downstream pointers).
 4. Update the top-level `README.md` if the skill table or lifecycle diagram changed.
-5. Add a `CHANGELOG.md` entry — either bump a new version section (if you're cutting a release) or drop the change under `[Unreleased]` (if landing a docs/CI/example change without a version bump).
-6. For user testing: `claude plugin update abc@abc`, then restart Claude Code.
+5. Add a `CHANGELOG.md` entry under the new version's section in the same PR. `[Unreleased]` is a staging area only for in-flight branches — it should be empty on `main` between releases.
+6. For user testing: `claude plugin update abc@abc`, then restart Claude Code. If the update appears to no-op, the install cache hasn't moved — use `claude plugin uninstall abc@abc && claude plugin install abc@abc` (see the README's *If `update` doesn't pick up your changes* note).
 
 ### Adding a new skill
 

@@ -15,11 +15,20 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-05-20
+
+This release exists to batch the docs / CI / polish that landed on top of 0.7.0 (PRs #8–#11) into a real PATCH bump, so installers see them via `claude plugin update`. See the new bump-rules note in `CLAUDE.md`: every user-visible change now ships in a versioned release, even docs and CI.
+
+### Added
+
+- `README.md` Quickstart — install + try `/abc:plan` before scrolling past Lifecycle / Skills / Subagents / Hooks / Design / Requirements. Tagline updated to drop the Linear-specific framing now that both tracker backends are first-class. (#8)
+- Slash-menu tracker hints — every tracker-coupled `SKILL.md` description now leads with `Linear ·` or `GitHub ·` so the slash menu telegraphs which tracker is required without the user opening the file. The four tracker-agnostic skills (`plan`, `pr`, `review`, `review-sweep`) are intentionally unprefixed. (#9)
+- YAML-parse step in `scripts/validate-plugin.py` + `.github/workflows/validate.yml` — frontmatter validation now actually parses the YAML (via PyYAML), not just checks the `---` fence. Catches `[…]`-at-start flow-sequence breaks, unterminated quotes, and missing required keys. (#10)
+- README "If a plugin update doesn't appear" note explaining that `claude plugin update` is a no-op when the version hasn't bumped, and pointing at `claude plugin uninstall && claude plugin install` as the reliable refresh.
+
 ### Changed
 
-- `README.md` — added a Quickstart section near the top so a reader can install + try `/abc:plan` before scrolling through Lifecycle / Skills / Subagents / Hooks / Design / Requirements. Tagline updated to drop the Linear-specific framing now that both backends are first-class.
-- Slash-menu tracker hints — every tracker-coupled `SKILL.md` description now leads with `Linear ·` or `GitHub ·` so the slash menu telegraphs which tracker is required without the user opening the file. Six skills touched (`scaffold-sub-issues`, `ship-issue`, `ship-epic` and their `-gh` siblings). The four tracker-agnostic skills (`plan`, `pr`, `review`, `review-sweep`) are intentionally unprefixed.
-- `scripts/validate-plugin.py` + `.github/workflows/validate.yml` — frontmatter validation now actually parses the YAML (via PyYAML) rather than just checking the `---` fence. Catches `[…]`-at-start flow-sequence breaks, unterminated quotes, and missing required keys (`name`, `description`). The workflow installs `pyyaml` before running the validator.
+- `CLAUDE.md` bump rules tightened — every user-visible change ships in a versioned release. PATCH for any change a user-installer should see (docs, CI tooling that affects published validation, examples, prompt edits). The `[Unreleased]` CHANGELOG section is now only for in-flight branches; merged PRs always ship under a version header.
 
 ## [0.7.0] - 2026-05-19
 
@@ -75,7 +84,8 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `scripts/validate-plugin.py` + `.github/workflows/validate.yml` — manifest + skill/agent frontmatter validation on every push and PR. Catches JSON drift, version mismatch between `marketplace.json` and `plugin.json`, missing YAML frontmatter, hook executable bit loss. ([#2](https://github.com/semanticpixel/abc/pull/2))
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
-[Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/semanticpixel/abc/releases/tag/v0.7.1
 [0.7.0]: https://github.com/semanticpixel/abc/releases/tag/v0.7.0
 [0.6.0]: https://github.com/semanticpixel/abc/releases/tag/v0.6.0
 [0.5.0]: https://github.com/semanticpixel/abc/releases/tag/v0.5.0
