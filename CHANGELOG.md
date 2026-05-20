@@ -19,6 +19,7 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 - `README.md` — added a Quickstart section near the top so a reader can install + try `/abc:plan` before scrolling through Lifecycle / Skills / Subagents / Hooks / Design / Requirements. Tagline updated to drop the Linear-specific framing now that both backends are first-class.
 - Slash-menu tracker hints — every tracker-coupled `SKILL.md` description now leads with `Linear ·` or `GitHub ·` so the slash menu telegraphs which tracker is required without the user opening the file. Six skills touched (`scaffold-sub-issues`, `ship-issue`, `ship-epic` and their `-gh` siblings). The four tracker-agnostic skills (`plan`, `pr`, `review`, `review-sweep`) are intentionally unprefixed.
+- `scripts/validate-plugin.py` + `.github/workflows/validate.yml` — frontmatter validation now actually parses the YAML (via PyYAML) rather than just checking the `---` fence. Catches `[…]`-at-start flow-sequence breaks, unterminated quotes, and missing required keys (`name`, `description`). The workflow installs `pyyaml` before running the validator.
 
 ## [0.7.0] - 2026-05-19
 
