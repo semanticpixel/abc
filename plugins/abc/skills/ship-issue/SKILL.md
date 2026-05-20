@@ -1,6 +1,6 @@
 ---
 name: ship-issue
-description: Drives a Linear issue (or list, or parent with sub-issues) from Backlog to Done through the implement → PR → address-review → merge loop. TRIGGER when the user says "/ship-issue TICKET-ID", asks to ship/land/drive/autoland a ticket, or wants Claude to take a Linear issue through review to merge. Also trigger when resuming work on a ticket with an open PR and pending reviewer comments. Supports GitHub + GitLab and multi-repo parent issues via `repo:` Linear labels. Self-arms its own `/loop` — the user invokes once and walks away.
+description: Linear · Drives a Linear issue (or list, or parent with sub-issues) from Backlog to Done through the implement → PR → address-review → merge loop. TRIGGER when the user says "/ship-issue TICKET-ID", asks to ship/land/drive/autoland a ticket, or wants Claude to take a Linear issue through review to merge. Also trigger when resuming work on a ticket with an open PR and pending reviewer comments. Supports GitHub + GitLab and multi-repo parent issues via `repo:` Linear labels. Self-arms its own `/loop` — the user invokes once and walks away.
 argument-hint: "TICKET-ID | https://linear.app/.../TICKET-ID | ID1,ID2,ID3 | PARENT-ID | milestone:UUID"
 model: opus
 allowed-tools:

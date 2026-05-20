@@ -1,6 +1,6 @@
 ---
 name: ship-epic-gh
-description: GitHub-Issues sibling of /abc:ship-epic. Coordinator for a GitHub parent issue whose children live in a managed `## Sub-issues` task-list. Builds a dependency graph from `blocks:#N` / `blocked-by:#N` labels on the children, fires `/loop 6m /abc:ship-issue-gh <owner>/<repo>#<n>` per ready child (truly parallel via independent cron entries), gates blocked children until upstreams merge, aggregates status into the parent. Self-arms its own `/loop` — invoke once and walk away. TRIGGER when the user says "/ship-epic-gh <owner>/<repo>#<n>", asks to "ship this epic" against a GitHub parent, or wants to drive a multi-repo GitHub epic through merge in parallel.
+description: GitHub · GitHub-Issues sibling of /abc:ship-epic. Coordinator for a GitHub parent issue whose children live in a managed `## Sub-issues` task-list. Builds a dependency graph from `blocks:#N` / `blocked-by:#N` labels on the children, fires `/loop 6m /abc:ship-issue-gh <owner>/<repo>#<n>` per ready child (truly parallel via independent cron entries), gates blocked children until upstreams merge, aggregates status into the parent. Self-arms its own `/loop` — invoke once and walk away. TRIGGER when the user says "/ship-epic-gh <owner>/<repo>#<n>", asks to "ship this epic" against a GitHub parent, or wants to drive a multi-repo GitHub epic through merge in parallel.
 argument-hint: "<owner>/<repo>#<n>"
 model: opus
 allowed-tools:

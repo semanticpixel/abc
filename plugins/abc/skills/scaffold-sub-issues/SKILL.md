@@ -1,6 +1,6 @@
 ---
 name: scaffold-sub-issues
-description: Read one or more PLAN-*.md files and turn them into Linear sub-issues. Either creates a new parent issue from the plan (auto-detect mode) or adds sub-issues to an existing parent (when a parent ID is passed). Handles repo labels, blocks/blocked-by relations, and the manual-validation gate for /abc:ship-issue. Output is a parent ID you can paste into /abc:ship-issue or /abc:ship-epic. TRIGGER when the user says "/scaffold-sub-issues", "create Linear issues from this plan", "scaffold sub-issues for PARENT-ID", or passes a PLAN-*.md path.
+description: Linear · Read one or more PLAN-*.md files and turn them into Linear sub-issues. Either creates a new parent issue from the plan (auto-detect mode) or adds sub-issues to an existing parent (when a parent ID is passed). Handles repo labels, blocks/blocked-by relations, and the manual-validation gate for /abc:ship-issue. Output is a parent ID you can paste into /abc:ship-issue or /abc:ship-epic. TRIGGER when the user says "/scaffold-sub-issues", "create Linear issues from this plan", "scaffold sub-issues for PARENT-ID", or passes a PLAN-*.md path.
 argument-hint: "<path-to-plan> | <parent-id> <path-to-plan> [<more-plan-paths>...] | (auto-detect latest PLAN-*.md in cwd or ~/.claude/plans)"
 model: opus
 allowed-tools:
