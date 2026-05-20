@@ -4,10 +4,12 @@
 Checks:
 - All JSON manifests parse.
 - The `abc` plugin entry version in marketplace.json matches plugin.json version.
-- Every SKILL.md and agent .md starts with YAML frontmatter (---).
+- Every SKILL.md and agent .md has YAML frontmatter that parses cleanly to a dict
+  with at least `name` and `description` keys.
 - The stay-awake hook script is executable.
 
 Run locally: python3 scripts/validate-plugin.py
+Requires: PyYAML (`pip install pyyaml`).
 """
 from __future__ import annotations
 
@@ -15,6 +17,15 @@ import json
 import os
 import sys
 from pathlib import Path
+
+try:
+    import yaml
+except ImportError:
+    print(
+        "Validation FAILED: PyYAML is required. Install with `pip install pyyaml`.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -63,14 +74,44 @@ if marketplace and plugin:
             f"!= plugin.json version={plugin.get('version')!r}"
         )
 
-# 3. YAML frontmatter on every SKILL.md and agent .md
+# 3. YAML frontmatter on every SKILL.md and agent .md — parses to a dict with
+#    `name` and `description`. Catches the class of bug where a description
+#    starts with `[` (YAML flow sequence), unbalanced quotes, etc.
 skill_md = list((ROOT / "plugins" / "abc" / "skills").glob("*/SKILL.md"))
 agent_md = list((ROOT / "plugins" / "abc" / "agents").glob("*.md"))
 md_files = skill_md + agent_md
 for md in md_files:
-    lines = md.read_text().splitlines()
+    text = md.read_text()
+    lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         err(f"missing YAML frontmatter (first line must be `---`): {rel(md)}")
+        continue
+    # Find the closing `---`.
+    closing = None
+    for i, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            closing = i
+            break
+    if closing is None:
+        err(f"unterminated YAML frontmatter (no closing `---`): {rel(md)}")
+        continue
+    block = "\n".join(lines[1:closing])
+    try:
+        parsed = yaml.safe_load(block)
+    except yaml.YAMLError as e:
+        err(f"YAML frontmatter does not parse in {rel(md)}: {e}")
+        continue
+    if not isinstance(parsed, dict):
+        err(
+            f"YAML frontmatter in {rel(md)} parsed to {type(parsed).__name__}, "
+            "expected a mapping (dict). Often caused by a description starting "
+            "with `[` — YAML reads it as a flow sequence. Use a plain-scalar "
+            "separator (e.g. `Foo · ...`) instead, or quote the whole string."
+        )
+        continue
+    for required in ("name", "description"):
+        if required not in parsed:
+            err(f"YAML frontmatter in {rel(md)} is missing required key `{required}`")
 
 # 4. Hook script executable bit preserved
 hook = ROOT / "plugins" / "abc" / "hooks" / "stay-awake.sh"
