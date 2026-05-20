@@ -64,7 +64,8 @@ abc/
    - **PATCH** for prompt tightening, bug fixes, doc edits
    - **MAJOR** only when the lifecycle contract itself changes (renamed/removed skill that breaks downstream pointers)
 4. Update the top-level `README.md` if the skill table or lifecycle diagram changed.
-5. For user testing: `claude plugin update abc@abc`, then restart Claude Code.
+5. Add a `CHANGELOG.md` entry — either bump a new version section (if you're cutting a release) or drop the change under `[Unreleased]` (if landing a docs/CI/example change without a version bump).
+6. For user testing: `claude plugin update abc@abc`, then restart Claude Code.
 
 ### Adding a new skill
 
