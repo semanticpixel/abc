@@ -1,6 +1,6 @@
 # ship-issue-gh — Design
 
-Status: **Approved** — mirrors the Linear `ship-issue` design with GitHub-Issues-specific adaptations per `PLAN-gh.md`.
+Status: **Approved** — mirrors the Linear `ship-issue` design with GitHub-Issues-specific adaptations.
 
 This doc exists so that humans critique the GitHub-specific deviations before any skill code is written. The state machine, three-strikes counter, self-cheating hard-stop, and self-arming `/loop` contract are all lifted **verbatim** from `../ship-issue/DESIGN.md` — read that for the universal rationale. **This file documents what changes for the GitHub-Issues case.**
 
@@ -12,7 +12,7 @@ Drive a GitHub issue (or list, or parent issue with a managed `## Sub-issues` ta
 
 ## Why a parallel skill, not a tracker abstraction inside `ship-issue`
 
-Locked decision from `PLAN-gh.md`. Re-summarised:
+Locked decision from the original `-gh` family planning. Re-summarised:
 
 - The two trackers have **different state machines, different data shapes, different durable-state primitives**. Linear has typed relations and a 5-state enum; GitHub has 2 states + label-emulation. A unified skill would carry a forked conditional through every Phase 3 row and every Phase 4 handler, which dwarfs the cost of two parallel files.
 - Skill prompts are read by the model at load time. **Duplication is cheaper than abstraction** here — the model parses a focused 380-line skill more reliably than a 600-line skill with "if Linear else GitHub" branches everywhere.
