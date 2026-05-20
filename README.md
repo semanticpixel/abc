@@ -240,6 +240,8 @@ abc/                                  ← marketplace root
 
 [Semver](https://semver.org/) with a personal-tools bias toward MINOR bumps for skill additions, PATCH for bug fixes and prompt tightening, MAJOR only when the lifecycle contract itself changes (e.g. a renamed/removed skill that breaks downstream pointers).
 
+Per-version notes live in [`CHANGELOG.md`](./CHANGELOG.md).
+
 ---
 
 ## Author
