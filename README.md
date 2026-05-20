@@ -82,6 +82,48 @@ Optional environment variables:
 
 ---
 
+## Requirements
+
+Install only what's needed for the skills you'll actually use — every dependency is per-skill and the rest of the toolkit will still work without it.
+
+### Claude Code
+
+- Claude Code with plugin / marketplace support.
+
+### Trackers (MCPs)
+
+| Skill | Required |
+|---|---|
+| `/abc:scaffold-sub-issues`, `/abc:ship-issue`, `/abc:ship-epic` | Linear MCP (`claude_ai_Linear`) connected and authed |
+| `/abc:review`, `/abc:review-sweep` (GitLab paths only) | GitLab MCP (`mcp__gitlab__*`) |
+| `/abc:plan`, `/abc:pr`, `/abc:review` (GitHub paths) | None — local files + `gh` CLI |
+
+> GitHub-Issues siblings (`scaffold-sub-issues-gh`, `ship-issue-gh`, `ship-epic-gh`) are planned (see `PLAN-gh.md`) but not yet implemented. Today, the tracker-coupled skills require Linear.
+
+### Platform CLIs
+
+| CLI | Used by | Auth check |
+|---|---|---|
+| `git` | every repo-touching skill | — |
+| `gh` | GitHub repos — PR ops, comments, check runs | `gh auth status` |
+| `glab` | GitLab repos — MR ops, pipelines, notes | `glab auth status` |
+
+### Node toolchain
+
+Used by `/abc:pr` and `/abc:ship-issue` to run typecheck/lint/tests before opening a PR/MR.
+
+- `node`
+- One of `pnpm` / `npm` / `yarn` — auto-detected from the lockfile in cwd.
+
+### `stay-awake` hook (optional, macOS-only)
+
+- `jq`
+- `caffeinate` (ships with macOS)
+
+The hook gracefully no-ops if either is missing or you're on a non-macOS platform.
+
+---
+
 ## Install (local development)
 
 ```bash
