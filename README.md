@@ -41,6 +41,7 @@ Pick the family by tracker: the unsuffixed skills target Linear; the `-gh` sibli
 | `/abc:scaffold-sub-issues [parent-id] [plan-paths]` | Reads one or more PLAN-*.md files, proposes a Linear parent + sub-issues with repo labels and dependency edges, asks for confirmation, then creates them. Output is a parent ID you can paste into `/abc:ship-epic`. |
 | `/abc:scaffold-sub-issues-gh [<owner>/<repo>[#<n>]] [plan-paths]` | GitHub-Issues sibling. Same input shape and confirmation gate, but creates a GitHub parent issue with a managed `## Sub-issues` task-list plus `status:*` / `repo:*` / `blocks:*` labels (emulating Linear's state machine and relations on top of GitHub). Output is a parent `<owner>/<repo>#<n>` ID. See `plugins/abc/skills/scaffold-sub-issues-gh/github-conventions.md` for the label scheme shared across the `-gh` family. |
 | `/abc:ship-issue <TICKET\|list\|parent\|milestone:uuid>` | Drives a Linear issue (or list / parent / milestone) from Backlog to Done through the implement → PR → address-review → merge loop. Self-arms its own `/loop` — invoke once and walk away. |
+| `/abc:ship-issue-gh <<owner>/<repo>#<n>\|list\|parent\|milestone:<owner>/<repo>/<num>>` | GitHub-Issues sibling. Same self-arming loop, same state machine + escape hatches, but drives GitHub issues using the label/task-list conventions from `scaffold-sub-issues-gh/github-conventions.md`. GitHub-only — GitLab repos go through `/abc:ship-issue` instead. |
 | `/abc:ship-epic <PARENT-ID>` | Coordinator for parent issues with multi-repo sub-issues. Builds a dependency graph from `blocks`/`blocked by` relations, fires `/loop /abc:ship-issue <SUB-ID>` per ready sub-issue (truly parallel via independent cron entries), gates blocked sub-issues, aggregates status to the parent. See `plugins/abc/skills/ship-epic/DESIGN.md` for the architectural rationale. |
 | `/abc:pr [title-hint]` | Local change → PR/MR. Inspects the diff, groups related files, runs type-check + tests, commits with no AI attribution, pauses for confirmation, opens the PR/MR. Detects GitHub vs GitLab automatically. |
 | `/abc:review <url\|number>` | Review a single PR or MR with craft-level attention: semantic HTML, CSS architecture (tokens, logical properties, `light-dark()`), accessibility, TypeScript patterns, code quality. Proposes inline comments, shows them for approval, posts only what you confirm. Auto-detects platform from URL or git remote. |
@@ -99,11 +100,11 @@ Install only what's needed for the skills you'll actually use — every dependen
 | Skill | Required |
 |---|---|
 | `/abc:scaffold-sub-issues`, `/abc:ship-issue`, `/abc:ship-epic` | Linear MCP (`claude_ai_Linear`) connected and authed |
-| `/abc:scaffold-sub-issues-gh` | `gh` CLI authed for the target host. No Linear required. |
+| `/abc:scaffold-sub-issues-gh`, `/abc:ship-issue-gh` | `gh` CLI (>= 2.40) authed for the target host. No Linear required. |
 | `/abc:review`, `/abc:review-sweep` (GitLab paths only) | GitLab MCP (`mcp__gitlab__*`) |
 | `/abc:plan`, `/abc:pr`, `/abc:review` (GitHub paths) | None — local files + `gh` CLI |
 
-> `ship-issue-gh` and `ship-epic-gh` are still in flight (see `PLAN-gh.md`). Until they land, the GitHub track ends at `scaffold-sub-issues-gh` — the resulting GitHub issues need to be shipped manually for now.
+> `ship-epic-gh` (the coordinator that fans out parallel `ship-issue-gh` workers) is the last `-gh` sibling still in flight — see `PLAN-gh.md`. Until it lands, parallelism across a GitHub parent's children needs to be driven manually by invoking `/abc:ship-issue-gh` per child.
 
 ### Platform CLIs
 
@@ -205,6 +206,10 @@ abc/                                  ← marketplace root
         │   │   ├── SKILL.md
         │   │   └── github-conventions.md
         │   ├── ship-issue/
+        │   │   ├── SKILL.md
+        │   │   ├── DESIGN.md
+        │   │   └── README.md
+        │   ├── ship-issue-gh/
         │   │   ├── SKILL.md
         │   │   ├── DESIGN.md
         │   │   └── README.md
