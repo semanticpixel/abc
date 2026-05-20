@@ -1,8 +1,28 @@
 # ABC — Always Be Cooking
 
-A personal workflow toolkit for Claude Code: a tight, opinionated set of slash commands and subagents that take a feature from **idea → plan → Linear issues → parallel shipping → review → merge** with the fewest possible re-explanations.
+A personal workflow toolkit for Claude Code: a tight, opinionated set of slash commands and subagents that take a feature from **idea → plan → tracker issues → parallel shipping → review → merge** with the fewest possible re-explanations. Backed by either Linear or GitHub Issues — pick by tracker, not auto-detect.
 
 > "Always Be Cooking" — the mindset of staying in motion. The toolkit encodes the recurring loops so the human only does the parts that require judgment.
+
+---
+
+## Quickstart
+
+```bash
+claude plugin marketplace add semanticpixel/abc
+claude plugin install abc@abc
+# restart Claude Code
+```
+
+Then, in any project:
+
+```
+/abc:plan Add a settings page to the dashboard
+```
+
+`/abc:plan` writes a draft `PLAN-*.md` to disk in 3–5 tool calls — no tracker MCPs, no auth, no network. You iterate by editing the file, then hand it to `/abc:scaffold-sub-issues[-gh]` to create tracker issues, then `/abc:ship-issue[-gh]` or `/abc:ship-epic[-gh]` to ship them.
+
+For tracker-coupled skills (`scaffold-sub-issues`, `ship-issue`, `ship-epic` and their `-gh` siblings) you'll need either the Linear MCP or the `gh` CLI authed — see [Requirements](#requirements).
 
 ---
 
