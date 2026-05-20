@@ -1,0 +1,21 @@
+{
+  "name": "abc",
+  "owner": {
+    "name": "Luis Torres"
+  },
+  "metadata": {
+    "description": "Always Be Cooking — personal workflow toolkit.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "abc",
+      "description": "Personal workflow toolkit: plan, scaffold-sub-issues, ship-issue, ship-epic, pr, review, review-sweep + reviewer/triage subagents.",
+      "version": "0.4.0",
+      "author": {
+        "name": "Luis Torres"
+      },
+      "source": "./plugins/abc"
+    }
+  ]
+}

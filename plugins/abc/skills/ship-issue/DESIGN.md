@@ -1,0 +1,269 @@
+# ship-issue — Design
+
+Status: **Approved**, amended 2026-04-23 — added platform detection (GitHub/GitLab) and multi-repo invocation via Linear labels.
+
+This doc exists so that humans critique the approach before any skill code is written. Once reviewed and merged, the implementation ticket picks up against these decisions.
+
+**Terminology note**: "PR" in this doc means *pull request (GitHub) or merge request (GitLab)* — same concept, different platform verb. The skill always uses the platform-correct term in actual operations.
+
+## Purpose
+
+Drive a Linear issue (or list, or parent with sub-issues) from **Backlog** to **Done** through the implement → PR → address-review → merge loop, autonomously. Invoked as `/ship-issue <arg>`. Codifies the pattern we ran manually for PROJ-83..86.
+
+## Non-goals
+
+- Writing net-new Linear issues or breaking epics into sub-tasks (user's job).
+- Making architectural decisions not scoped in the ticket.
+- Replacing human review. Code review still happens; the skill addresses review comments but does not merge over objection.
+- Auto-verifying UI changes. That's Phase C (`/verify-ticket`); `ship-issue` only defers to it.
+
+## Input
+
+`<arg>` accepts:
+
+- A single ticket ID: `PROJ-88`
+- A Linear URL: `https://linear.app/<workspace>/issue/PROJ-88`
+- A **parent issue ID** — the skill resolves its sub-issues and walks them in Linear's default order
+- A **comma-separated list** in desired order: `PROJ-65,PROJ-66,PROJ-67`
+- A **project milestone**: `milestone:<uuid>` — skill expands to the milestone's non-terminal issues, ordered by `createdAt` ascending
+
+If the arg is a parent issue with no sub-issues, treat it as a single ticket. If it's a list, the user's order is respected — the skill does not re-prioritise.
+
+**Parent issues are the natural multi-repo pattern.** When a change spans multiple repos (e.g. a feature that needs a server-side change in one repo and a client-side change in another), the user breaks the parent issue into one sub-task per repo and labels each sub-task with its target repo (see "Platform and repo discovery" below). Sub-tasks serialise — if A must merge before B, the user orders them that way in Linear.
+
+**Milestones are the natural phase-of-work pattern.** When all issues under a project milestone (e.g. "Phase 2 — Feedback Reporter (Linear)") need to be shipped as a batch, the user passes `milestone:<uuid>` and the skill walks them. Resolution is: `list_milestones` → find the UUID → extract its project → scoped `list_issues(project=<that>)` with pagination → client-side filter by `projectMilestone.id`. This keeps the query bounded; an unscoped "find this UUID anywhere in the workspace" query would silently truncate on any workspace with more issues than the page limit. Invalid UUID or all-terminal milestones → `blocked-user` before the cron arms (no silent empty-loops).
+
+Ordering is `createdAt` ascending, which matches the common case of creating tickets in intended work-order. **Caveat**: if the user later drags tickets around in Linear's milestone view, the skill won't follow the manual reorder — the MCP's `list_issues` doesn't expose `sortOrder` on issues. Workaround for reordered milestones is to pass the tickets as an explicit comma-separated list in the desired order.
+
+The raw arg string retained for the cron-entry match rule is the original `milestone:<uuid>` form, not the expanded list. That way re-invoking with the same milestone is idempotent (one loop per milestone), and new issues added to the milestone mid-flight get picked up on the next wake's re-derivation.
+
+## Platform and repo discovery
+
+The skill is platform-agnostic: it can drive GitHub repos (via `gh`) and GitLab repos (via `glab`). It also supports multi-repo invocations by convention rather than configuration.
+
+### Per-item label resolution
+
+The **same rule applies to every input shape** — single ticket, comma-separated list, or parent with sub-tasks. For each item the skill is about to work on:
+
+1. Does the item have a `repo:<name>` label? → resolve `<name>` to a subdirectory of cwd and work there.
+2. No label? → fall back to the current git repo of the invocation cwd.
+
+Mixing is allowed: some items in a list can have `repo:` labels and others not. Each is resolved independently. This means a comma-separated list of tickets that all live in one repo doesn't need any labels — just `cd` into that repo and run the skill. A list of tickets spanning multiple repos labels each one explicitly.
+
+Platform is detected from the resolved repo's origin:
+
+```
+git remote get-url origin
+  → contains "github.com"    → use `gh`
+  → contains "gitlab.<host>" → use `glab`
+  → anything else            → blocked-user (unknown platform)
+```
+
+### Multi-repo example
+
+When the invocation arg is a parent issue whose sub-tasks span repos, the user typically invokes from a parent directory containing each repo as a subdirectory:
+
+```
+cwd: <workspace>/
+├── repo-a/              ← has git remote pointing at GitLab
+├── repo-b/              ← has git remote pointing at GitHub
+└── repo-c/              ← has git remote pointing at GitHub
+```
+
+Each sub-task gets a `repo:<name>` label matching one of the subdirs. The per-item resolution rule above then applies to each sub-task independently.
+
+### Blocked-user triggers specific to repo discovery
+
+- Item has a `repo:<name>` label whose `<name>` doesn't match any subdirectory of cwd.
+- Item has **multiple** `repo:` labels. One item = one repo; if a change truly needs two repos in a single unit, the user needs to split it.
+- Item has **no** `repo:` label AND the invocation cwd is not itself inside a git repo (i.e. there's no fallback).
+- Detected platform is neither GitHub nor GitLab.
+
+## State machine (per ticket)
+
+```
+pending ──▶ implementing ──▶ pr-open ──▶ merged ──▶ (advance to next)
+                                │
+                  ┌─────────────┼───────────────┐
+                  ▼             ▼               ▼
+                fixing     blocked-user    blocked-verify
+                  │             │               │
+                  └─▶ pr-open   │         ┌─────┘
+                                │         ▼
+                                │    (pass) merged
+                                │    (fail) fixing or blocked-user
+                                ▼
+                             (terminal: halt loop)
+                             failed ◀─── hard error
+```
+
+| State | Meaning | Linear status |
+|---|---|---|
+| `pending` | Ticket selected, not yet worked | Backlog / Todo (unchanged) |
+| `implementing` | Writing code + running tests locally | In Progress |
+| `pr-open` | PR created, waiting for CI + reviews | In Review |
+| `fixing` | Addressing review comments | In Progress |
+| `blocked-user` | Ambiguity or judgment call — wait for human | In Review (+ Slack ping, Phase B) |
+| `blocked-verify` | `## Validation` present, auto-verify pending (Phase C) | In Review |
+| `merged` | PR merged | Done |
+| `failed` | Hard error — halt | Canceled (with explanation comment) |
+
+### Transitions — who initiates
+
+| From → To | Initiator | Trigger |
+|---|---|---|
+| `pending → implementing` | skill | start of loop |
+| `implementing → pr-open` | skill | PR created |
+| `pr-open → fixing` | skill | code-review-bot or reviewer comment detected |
+| `fixing → pr-open` | skill | fix commit pushed |
+| `pr-open → merged` | GitHub / GitLab | PR/MR merged (detected by polling) |
+| `pr-open → blocked-user` | skill | see triggers below |
+| `any → blocked-verify` | skill | ticket body contains `## Validation` and it's not yet passed |
+| `blocked-verify → merged` | Phase C skill | `/verify-ticket` returns ✅ |
+| `blocked-verify → fixing` / `blocked-user` | Phase C skill or human | ❌ result |
+| `any → failed` | skill or user | hard error, see escape hatches |
+
+## Polling cadence
+
+**6-minute fixed interval** for `pr-open` and `blocked-verify`. Chosen empirically from PROJ-83..86. Slight cache-miss cost per wake is acceptable at that rate; shorter intervals burn cache without informational gain.
+
+No separate heartbeat — the poll itself verifies nothing is stuck.
+
+### Self-arming (load-bearing)
+
+The user invokes `/ship-issue <arg>` once. The skill itself is responsible for arming the `/loop` that fires subsequent wakes — the user should **never** need to type `/loop 6m /ship-issue ...` explicitly. This is the correctness contract of the skill, not a convenience.
+
+#### Cron-entry match rule
+
+Used by both the arm check (below) and the self-cancel in Stop conditions. **Define it once, reference it by name** — these two checks must stay in lockstep, and past edits have drifted when the rule was described inline twice.
+
+> A `CronList` entry **matches** this invocation when its command string contains the substring `/ship-issue <raw-arg>` **followed by a word boundary** — the next character (if any) must NOT be alphanumeric, `-`, or `,`. This prevents `PROJ-1` from false-matching `PROJ-10` (prefix) or `PROJ-1,PROJ-2` (comma continuation). The boundary check works whether `CronList` reports the entry as the wrapped `/loop 6m /ship-issue <raw-arg>` or the inner `/ship-issue <raw-arg>`.
+
+#### Arm check
+
+Evaluated at the start of every wake:
+
+1. Call `CronList` to enumerate active scheduled tasks in the current session.
+2. Apply the cron-entry match rule above to each entry.
+3. If no match → invoke `Skill(skill: "loop", args: "6m /ship-issue <raw-arg>")` to arm the cron.
+4. If a match → no-op. This is the common path on loop-triggered wakes.
+
+The match key is the **full raw arg string**. So `/ship-issue PROJ-89,PROJ-90` is one loop that walks the two tickets in user-specified order. A separate invocation with a different arg — e.g. the user types `/ship-issue PROJ-91` later — gets its own independent cron.
+
+On terminal state (all items `merged`, any item `blocked-user` or `failed`), the skill calls `CronDelete` on its own entry to stop the loop. Combined with the idempotent arm-check above, this makes the skill self-contained: the user never manages the cron.
+
+**Why this matters as a decision, not a detail**: without the self-arming check, the user has to remember the `/loop` wrapper on every invocation, which defeats the whole "invoke and walk away" premise of the skill. This rule was implicit in A.1's Decision #1 ("6-minute fixed polling cadence") but the A.2 implementation dropped it. Making it explicit here so the intent can't drift again.
+
+## Stop conditions
+
+The loop halts when any of:
+
+- All input tickets reach `merged`.
+- Any ticket enters `blocked-user` (skill surfaces state + Slack ping; user resumes).
+- Any ticket enters `failed`.
+- User cancels (mechanism TBD in A.2 — candidates: Ctrl-C, `/ship-issue-stop`, or a `cancel` Linear comment).
+
+In every terminal case the skill calls `CronDelete` on its own loop entry, identified via the [cron-entry match rule](#cron-entry-match-rule) defined under Self-arming. The `/loop` cron stops immediately — the user doesn't have to run `/loop cancel` manually.
+
+## Blocked-user triggers
+
+The skill stops and asks, it doesn't guess, when:
+
+- Review comment requests scope outside the ticket's acceptance criteria.
+- **Same code-review-bot rule ID / finding-name** appears twice in a row after a fix commit — not the same severity or category, the same *named rule*. If the rule code-review-bot fires is identical after a fix attempt, the fix didn't address the underlying issue and it's likely a design problem the skill can't patch away. (Rule ID is the most precise class definition; severity alone would over-trigger, category alone would under-trigger.)
+- CI fails in a non-test-assertion way (env, secrets, deps).
+- Merge conflict with `main` requires judgment to resolve.
+- User @-mentions Claude on the PR.
+- Any of the repo-discovery conditions listed under "Platform and repo discovery" (missing/multiple `repo:` labels, unresolvable `<name>`, unknown platform).
+
+## blocked-verify triggers
+
+- Ticket body has a `## Validation` section.
+- Pre-Phase C: skill transitions to `blocked-user` with the validation text inlined, so a human runs it.
+- Post-Phase C: skill invokes `/verify-ticket <id>`; decision follows the verify skill's result.
+
+## Session-boundary behavior
+
+**The skill keeps no in-memory state across sessions.** Linear, GitHub, and GitLab are the sources of truth. Durable state (e.g. retry counters — see escape hatches) goes in Linear comments using the canonical format `<!-- ship-issue:<category>:<key>=<value> -->`. The skill re-reads its own notes on re-invocation. Example: `<!-- ship-issue:failcount:github:ci/test=2 -->` (see escape hatches for the concrete use).
+
+On every invocation the skill:
+
+1. Looks up each ticket's current Linear state, all linked PRs (open and closed), and any ship-issue Linear comments it previously wrote.
+2. Derives the state-machine state using these rules, in order:
+
+   | Condition | Derived state |
+   |---|---|
+   | Merged PR exists | `merged` |
+   | Closed PR (not merged) exists for this ticket | **`failed`** — surface the closed-PR URL and halt. Do not re-create. |
+   | Open PR exists with unaddressed review comments since last skill commit | `fixing` |
+   | Open PR exists, no new comments | `pr-open` |
+   | No PR has ever existed, ticket is In Progress/In Review | `implementing` (resume) |
+   | No PR, no prior activity | `pending` |
+
+3. Resumes from derived state. Never resets a ticket that's already In Progress or In Review.
+
+Closing the terminal mid-loop is safe: re-running `/ship-issue <same-arg>` picks up where it left off. No persistent local state to corrupt.
+
+**If you intentionally want to re-work a ticket that has a closed-unmerged PR**, re-open the PR or close the ticket and re-file. The skill will not silently retry — that's the point of the `failed` transition.
+
+## Escape hatches
+
+### Hard stops (→ `failed`, loop halts)
+
+- **Three consecutive commits fail the same CI check.** Platform-aware:
+  - GitHub: "same check" = identical check-run name from the GitHub Checks API (e.g. `ci / test`, `code-review-bot / review`).
+  - GitLab: "same check" = identical pipeline job name (e.g. `build/compile`, `test/unit`).
+  The counter is persisted in a Linear comment with a platform-scoped key: `<!-- ship-issue:failcount:github:<check-name>=N -->` or `<!-- ship-issue:failcount:gitlab:<job-name>=N -->`. Platform segment prevents collisions if a sub-task graph spans both platforms. Survives session restarts — otherwise a perpetually flaky check could dodge the hard-stop by the user happening to re-invoke between failures. **Counter resets only when the same check passes.** `fixing → pr-open` transitions do *not* reset the counter — that's the exact loop we're trying to catch. Reaching `merged` / `failed` is terminal, so reset is moot.
+- Rebase after parent PR merge fails and auto-resolution would clearly be wrong.
+- Skill catches itself about to bypass a failing check — e.g., `--no-verify`, deleting assertions to make tests pass, relaxing a type. **Hard-stop, no self-healing.**
+
+### Soft stops (→ `blocked-user`, loop pauses)
+
+- Scope-creep review comment.
+- Judgment call on conflict resolution.
+- Direct user message interrupting the loop → skill reads it and changes course or asks for clarification.
+
+## What the skill does NOT do
+
+- Merge a PR without at least one green signal (human approval, or CI + code-review-bot both green on a non-blocking review).
+- Merge when `## Validation` exists and verification hasn't succeeded.
+- Silently absorb review comments as scope additions.
+- Retry transient failures without surfacing them.
+- Modify or weaken tests to pass. If a test is wrong, that's a new ticket.
+
+## Decisions locked in this doc
+
+Don't re-litigate in the implementation ticket without a new round of architect review:
+
+1. 6-minute fixed polling cadence.
+2. Linear, GitHub, and GitLab are the sources of truth; skill is stateless.
+3. User orders the ticket list; skill does not re-prioritise.
+4. The state machine shape above.
+5. Hard-stop on the "skill catches itself cheating" class of errors — **no soft-fail**.
+6. Slack integration deferred to Phase B; placeholders go in now.
+7. Auto-verify deferred to Phase C; `blocked-verify` escapes to `blocked-user` in the interim.
+8. **Platform adapter**: auto-detect from `git remote get-url origin` per repo. GitHub → `gh`, GitLab → `glab`, anything else → blocked-user.
+9. **Per-item `repo:` label resolution**: for each item (single ticket, list item, or sub-task), at most one `repo:<name>` label is resolved to a subdirectory of cwd. Zero labels falls back to the cwd git repo (blocked-user only when cwd is not inside a git repo). Multiple labels are blocked. No config file, no auto-inference from title/paths.
+
+## Open questions for the implementation ticket
+
+These are implementation choices, not architecture:
+
+1. **Cancellation mechanism.** Ctrl-C, `/ship-issue-stop`, Linear comment `cancel`, or multiple? Pick one that maps cleanly to how `/loop` currently handles stops.
+2. **Linear status updates.** Does the skill write status transitions, or just read? Recommendation: write on `implementing`, `pr-open`, `merged` so there's an audit trail. Verify which status updates don't trigger unwanted Linear notifications.
+3. **PR ↔ Linear linking.** Use Linear's Magic URL format in the PR description so the issue auto-transitions? (Likely yes — free audit trail.)
+4. **Sub-issue discovery.** Which Linear MCP call returns a parent's sub-issues in order? Smoke-test in A.2.
+5. **Session notes.** In-memory only, or a local scratch file? Recommendation: in-memory; if debugging needs persistence, use Linear comments (durable, shareable) rather than local files.
+6. **Stacked PRs.** PROJ-83..86 required stacking on top of each other's branches. Does ship-issue auto-stack when it detects a common file touch-point, or does it serialise (wait for merge before starting the next)? Serialise is simpler for v1.
+
+## Review checklist (for the architect-role reviewer)
+
+Per the AI-native workflow principle *the ability to criticise AI will be more valuable than the ability to produce code*, this doc needs a human signing off on:
+
+- [ ] State machine captures real-world situations — any state missing?
+- [ ] Blocked triggers are neither too loose (skill halts constantly) nor too tight (skill silently makes bad calls).
+- [ ] Escape hatches cover the "AI cheats to pass" failure mode explicitly. **This is the most important one.**
+- [ ] Session-boundary behavior is truly stateless — no hidden assumption about local files surviving.
+- [ ] What-the-skill-does-not-do list doesn't miss anything we'd regret later.
+
+After sign-off, the implementation ticket picks up with implementation against these decisions.
