@@ -9,24 +9,27 @@ A personal workflow toolkit for Claude Code: a tight, opinionated set of slash c
 ## The lifecycle
 
 ```
-   /abc:plan                 →  PLAN-<slug>.md (draft, fast, ship-aware)
+   /abc:plan                       →  PLAN-<slug>.md (draft, fast, ship-aware)
         ↓
-   /abc:scaffold-sub-issues  →  Linear parent + sub-issues + dependency graph
+   /abc:scaffold-sub-issues        →  Linear parent + sub-issues + dependency graph
+   /abc:scaffold-sub-issues-gh     →  GitHub parent + children (task-list + label DAG)
         ↓
-   /abc:ship-epic            →  parallel multi-repo shipping (fans out workers)
+   /abc:ship-epic | ship-epic-gh   →  parallel multi-repo shipping (fans out workers)
         OR
-   /abc:ship-issue           →  serial single-ticket worker (the unit)
+   /abc:ship-issue | ship-issue-gh →  serial single-ticket worker (the unit)
         ↓
-   /abc:review-sweep         →  bulk-triage your open PRs/MRs across GitHub + GitLab
+   /abc:review-sweep               →  bulk-triage your open PRs/MRs across GitHub + GitLab
         ↓
-                               merged
+                                     merged
 
    Off-pipeline utilities:
      /abc:pr      — local change → PR (GitHub) or MR (GitLab)
      /abc:review  — review a single PR/MR with craft-level attention
 ```
 
-Each step in the pipeline produces an artifact the next step consumes. No state lives in shell history or chat memory — **Linear and the git remote are the source of truth**, so any step can resume across sessions, machines, or days.
+Each step in the pipeline produces an artifact the next step consumes. No state lives in shell history or chat memory — **the tracker (Linear or GitHub Issues) and the git remote are the source of truth**, so any step can resume across sessions, machines, or days.
+
+Pick the family by tracker: the unsuffixed skills target Linear; the `-gh` siblings target GitHub Issues. `plan`, `pr`, `review`, and `review-sweep` are tracker-agnostic and shared by both. The `-gh` family is being built out — see `PLAN-gh.md` for the multi-PR rollout.
 
 ---
 
@@ -36,6 +39,7 @@ Each step in the pipeline produces an artifact the next step consumes. No state 
 |---|---|
 | `/abc:plan <description>` | Drafts a `PLAN-<slug>.md` within 3-5 tool calls. Sub-tasks are structured for `/abc:scaffold-sub-issues` to consume — each has a `repo:` tag, scope, acceptance criteria, and optional `blocks`/`blocked by` dependencies. Writes the file fast and lets you iterate from disk, not from Q&A. |
 | `/abc:scaffold-sub-issues [parent-id] [plan-paths]` | Reads one or more PLAN-*.md files, proposes a Linear parent + sub-issues with repo labels and dependency edges, asks for confirmation, then creates them. Output is a parent ID you can paste into `/abc:ship-epic`. |
+| `/abc:scaffold-sub-issues-gh [<owner>/<repo>[#<n>]] [plan-paths]` | GitHub-Issues sibling. Same input shape and confirmation gate, but creates a GitHub parent issue with a managed `## Sub-issues` task-list plus `status:*` / `repo:*` / `blocks:*` labels (emulating Linear's state machine and relations on top of GitHub). Output is a parent `<owner>/<repo>#<n>` ID. See `plugins/abc/skills/scaffold-sub-issues-gh/github-conventions.md` for the label scheme shared across the `-gh` family. |
 | `/abc:ship-issue <TICKET\|list\|parent\|milestone:uuid>` | Drives a Linear issue (or list / parent / milestone) from Backlog to Done through the implement → PR → address-review → merge loop. Self-arms its own `/loop` — invoke once and walk away. |
 | `/abc:ship-epic <PARENT-ID>` | Coordinator for parent issues with multi-repo sub-issues. Builds a dependency graph from `blocks`/`blocked by` relations, fires `/loop /abc:ship-issue <SUB-ID>` per ready sub-issue (truly parallel via independent cron entries), gates blocked sub-issues, aggregates status to the parent. See `plugins/abc/skills/ship-epic/DESIGN.md` for the architectural rationale. |
 | `/abc:pr [title-hint]` | Local change → PR/MR. Inspects the diff, groups related files, runs type-check + tests, commits with no AI attribution, pauses for confirmation, opens the PR/MR. Detects GitHub vs GitLab automatically. |
@@ -95,10 +99,11 @@ Install only what's needed for the skills you'll actually use — every dependen
 | Skill | Required |
 |---|---|
 | `/abc:scaffold-sub-issues`, `/abc:ship-issue`, `/abc:ship-epic` | Linear MCP (`claude_ai_Linear`) connected and authed |
+| `/abc:scaffold-sub-issues-gh` | `gh` CLI authed for the target host. No Linear required. |
 | `/abc:review`, `/abc:review-sweep` (GitLab paths only) | GitLab MCP (`mcp__gitlab__*`) |
 | `/abc:plan`, `/abc:pr`, `/abc:review` (GitHub paths) | None — local files + `gh` CLI |
 
-> GitHub-Issues siblings (`scaffold-sub-issues-gh`, `ship-issue-gh`, `ship-epic-gh`) are planned (see `PLAN-gh.md`) but not yet implemented. Today, the tracker-coupled skills require Linear.
+> `ship-issue-gh` and `ship-epic-gh` are still in flight (see `PLAN-gh.md`). Until they land, the GitHub track ends at `scaffold-sub-issues-gh` — the resulting GitHub issues need to be shipped manually for now.
 
 ### Platform CLIs
 
@@ -196,6 +201,9 @@ abc/                                  ← marketplace root
         │   ├── review-sweep/SKILL.md
         │   ├── plan/SKILL.md
         │   ├── scaffold-sub-issues/SKILL.md
+        │   ├── scaffold-sub-issues-gh/
+        │   │   ├── SKILL.md
+        │   │   └── github-conventions.md
         │   ├── ship-issue/
         │   │   ├── SKILL.md
         │   │   ├── DESIGN.md
