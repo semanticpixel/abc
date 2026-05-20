@@ -15,6 +15,10 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+### Changed
+
+- `README.md` — added a Quickstart section near the top so a reader can install + try `/abc:plan` before scrolling through Lifecycle / Skills / Subagents / Hooks / Design / Requirements. Tagline updated to drop the Linear-specific framing now that both backends are first-class.
+
 ## [0.7.0] - 2026-05-19
 
 ### Added
