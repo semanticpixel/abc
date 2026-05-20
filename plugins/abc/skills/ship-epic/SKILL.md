@@ -1,6 +1,6 @@
 ---
 name: ship-epic
-description: Coordinator for a Linear parent issue whose sub-issues span multiple repos. Builds a dependency graph from sub-issue `blocks`/`blocked by` relations, fires `/loop /abc:ship-issue <SUB-ID>` per ready sub-issue (truly parallel via independent cron entries), gates blocked sub-issues until upstreams merge, aggregates status into the parent. Self-arms its own `/loop` — invoke once and walk away. TRIGGER when the user says "/ship-epic PARENT-ID", asks to "ship this epic", or wants to drive a Linear parent through merge in parallel across repos.
+description: Linear · Coordinator for a Linear parent issue whose sub-issues span multiple repos. Builds a dependency graph from sub-issue `blocks`/`blocked by` relations, fires `/loop /abc:ship-issue <SUB-ID>` per ready sub-issue (truly parallel via independent cron entries), gates blocked sub-issues until upstreams merge, aggregates status into the parent. Self-arms its own `/loop` — invoke once and walk away. TRIGGER when the user says "/ship-epic PARENT-ID", asks to "ship this epic", or wants to drive a Linear parent through merge in parallel across repos.
 argument-hint: "PARENT-ID | https://linear.app/.../PARENT-ID | milestone:<uuid>"
 model: opus
 allowed-tools:
