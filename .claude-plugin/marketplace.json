@@ -11,7 +11,7 @@
     {
       "name": "abc",
       "description": "Personal workflow toolkit: plan, scaffold-sub-issues(+gh), ship-issue(+gh), ship-epic(+gh), pr, review, review-sweep + reviewer/triage subagents.",
-      "version": "0.7.0",
+      "version": "0.7.1",
       "author": {
         "name": "Luis Torres"
       },

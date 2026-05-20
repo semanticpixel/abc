@@ -179,6 +179,16 @@ claude plugin update abc@abc
 # 3. Restart Claude Code
 ```
 
+> **If `update` doesn't pick up your changes.** `claude plugin update abc@abc` is a no-op when the version in `plugin.json` hasn't bumped — it only refreshes a timestamp, not the install cache. If you've changed source files without bumping (or you're testing against a marketplace that auto-updated to a new commit at the same version), the reliable refresh is:
+>
+> ```bash
+> claude plugin uninstall abc@abc
+> claude plugin install abc@abc
+> # restart Claude Code
+> ```
+>
+> The repo's convention is to bump PATCH on every user-visible change so `update` works for installers — see [`CHANGELOG.md`](./CHANGELOG.md) for the per-version history.
+
 ### Useful commands
 
 ```bash
