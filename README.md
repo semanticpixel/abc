@@ -4,13 +4,23 @@ A personal workflow toolkit for Claude Code: a tight, opinionated set of slash c
 
 > "Always Be Cooking" — the mindset of staying in motion. The toolkit encodes the recurring loops so the human only does the parts that require judgment.
 
-<p align="center">
-  <img src="./examples/demo.gif" alt="/abc:plan drafts a structured PLAN from a long-form spec, then /abc:scaffold-sub-issues-gh creates a 10-issue GitHub epic with 15 dependency edges in one shot." width="100%">
-</p>
+<!--
+  Hero GIF temporarily removed. The vhs-rendered output had a font-fallback
+  letter-spacing bug that made the terminal output near-unreadable; a real
+  screen-recording is being made instead. The .tape + scripts/play-demo*.sh
+  source files remain in the repo as a regenerable fallback once the font
+  resolution path is sorted out.
+
+  Restore once the replacement GIF is in place:
+
+  <p align="center">
+    <img src="./examples/demo.gif" alt="…" width="100%">
+  </p>
+-->
 
 <p align="center">
   <sub>
-    Above: <code>/abc:plan</code> reads a long-form plan, drafts a structured one, then <code>/abc:scaffold-sub-issues-gh</code> creates a GitHub parent issue with a 10-child task-list and 15 dependency edges in a single invocation. The artifacts are real — <a href="https://github.com/semanticpixel/theluistorres/issues/11">see issue&nbsp;#11</a>. Watching for longer than 30s? See the <a href="./examples/demo-full.gif">full ~60s arc</a> through <code>/abc:ship-epic-gh</code>'s cron-armed worker fan-out, ending on <em>10 of 10 merged · parent closed · cron self-cancelled</em>.
+    Real artifacts from a 10-issue GitHub epic — <code>/abc:scaffold-sub-issues-gh</code> created the parent + children from a long-form plan; <code>/abc:ship-epic-gh</code> then walked them to <em>10 of 10 merged · parent closed · cron self-cancelled</em>. Click through to verify; these issues are live in <a href="https://github.com/semanticpixel/theluistorres/issues/11"><code>semanticpixel/theluistorres</code></a>.
   </sub>
 </p>
 
