@@ -15,6 +15,14 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-05-21
+
+### Added
+
+- README hero: a `vhs`-rendered GIF (`examples/demo.gif`, ~30s) showing the `/abc:plan → /abc:scaffold-sub-issues-gh` arc from a long-form `PLAN.md` to a 10-issue GitHub epic with 15 dependency edges. Paired with a longer companion (`examples/demo-full.gif`, ~60s) that continues through `/abc:ship-epic-gh`'s worker fan-out and ends on *"10 of 10 merged · parent closed · cron self-cancelled."*
+- Synthetic-output scripts (`scripts/play-demo.sh`, `scripts/play-demo-full.sh`) and paired `vhs` tape configs (`demo.tape`, `demo-full.tape`) — the GIFs are regenerable from disk with `vhs demo.tape` / `vhs demo-full.tape`, no live API or tracker auth needed.
+- Real-artifact screenshots in `examples/screenshots/` linking through to [`semanticpixel/theluistorres#11`](https://github.com/semanticpixel/theluistorres/issues/11) (the parent issue), a child showing the `repo:` / `status:` / `blocks:` / `blocked-by:` label scheme, and the repo's Issues tab. The visuals prove the workflow ran end-to-end on a real repo, not just in a demo.
+
 ## [0.7.1] - 2026-05-20
 
 This release exists to batch the docs / CI / polish that landed on top of 0.7.0 (PRs #8–#11) into a real PATCH bump, so installers see them via `claude plugin update`. See the new bump-rules note in `CLAUDE.md`: every user-visible change now ships in a versioned release, even docs and CI.
@@ -84,7 +92,8 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `scripts/validate-plugin.py` + `.github/workflows/validate.yml` — manifest + skill/agent frontmatter validation on every push and PR. Catches JSON drift, version mismatch between `marketplace.json` and `plugin.json`, missing YAML frontmatter, hook executable bit loss. ([#2](https://github.com/semanticpixel/abc/pull/2))
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
-[Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/semanticpixel/abc/releases/tag/v0.7.2
 [0.7.1]: https://github.com/semanticpixel/abc/releases/tag/v0.7.1
 [0.7.0]: https://github.com/semanticpixel/abc/releases/tag/v0.7.0
 [0.6.0]: https://github.com/semanticpixel/abc/releases/tag/v0.6.0
