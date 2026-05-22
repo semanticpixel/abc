@@ -15,6 +15,12 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-05-22
+
+### Changed
+
+- `examples/demo-full.gif` re-encoded at slightly higher quality (~3.3MB → ~5.4MB). Still well inside the GitHub README embedding budget, with cleaner text and less compression noise above the fold.
+
 ## [0.7.4] - 2026-05-22
 
 ### Added
@@ -116,7 +122,8 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `scripts/validate-plugin.py` + `.github/workflows/validate.yml` — manifest + skill/agent frontmatter validation on every push and PR. Catches JSON drift, version mismatch between `marketplace.json` and `plugin.json`, missing YAML frontmatter, hook executable bit loss. ([#2](https://github.com/semanticpixel/abc/pull/2))
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
-[Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.4...HEAD
+[Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.5...HEAD
+[0.7.5]: https://github.com/semanticpixel/abc/releases/tag/v0.7.5
 [0.7.4]: https://github.com/semanticpixel/abc/releases/tag/v0.7.4
 [0.7.3]: https://github.com/semanticpixel/abc/releases/tag/v0.7.3
 [0.7.2]: https://github.com/semanticpixel/abc/releases/tag/v0.7.2
