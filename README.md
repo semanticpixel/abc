@@ -4,23 +4,13 @@ A personal workflow toolkit for Claude Code: a tight, opinionated set of slash c
 
 > "Always Be Cooking" — the mindset of staying in motion. The toolkit encodes the recurring loops so the human only does the parts that require judgment.
 
-<!--
-  Hero GIF temporarily removed. The vhs-rendered output had a font-fallback
-  letter-spacing bug that made the terminal output near-unreadable; a real
-  screen-recording is being made instead. The .tape + scripts/play-demo*.sh
-  source files remain in the repo as a regenerable fallback once the font
-  resolution path is sorted out.
-
-  Restore once the replacement GIF is in place:
-
-  <p align="center">
-    <img src="./examples/demo.gif" alt="…" width="100%">
-  </p>
--->
+<p align="center">
+  <img src="./examples/demo-full.gif" alt="A real Claude Code session: /abc:plan drafts a structured plan from a long-form spec, /abc:scaffold-sub-issues-gh creates a 10-issue GitHub epic with 15 dependency edges, /abc:ship-epic-gh fans out parallel workers and walks the epic through merge." width="100%">
+</p>
 
 <p align="center">
   <sub>
-    Real artifacts from a 10-issue GitHub epic — <code>/abc:scaffold-sub-issues-gh</code> created the parent + children from a long-form plan; <code>/abc:ship-epic-gh</code> then walked them to <em>10 of 10 merged · parent closed · cron self-cancelled</em>. Click through to verify; these issues are live in <a href="https://github.com/semanticpixel/theluistorres/issues/11"><code>semanticpixel/theluistorres</code></a>.
+    Above: a real Claude Code session — <code>/abc:plan</code> drafts a structured plan from a long-form spec, <code>/abc:scaffold-sub-issues-gh</code> creates a GitHub parent issue with a 10-child task-list and 15 dependency edges, and <code>/abc:ship-epic-gh</code> arms a 10-minute coordinator + per-worker 6-minute loops that walk the epic to <em>10 of 10 merged · parent closed · cron self-cancelled</em>. The artifacts are real — click any thumbnail below to verify in <a href="https://github.com/semanticpixel/theluistorres/issues/11"><code>semanticpixel/theluistorres</code></a>.
   </sub>
 </p>
 

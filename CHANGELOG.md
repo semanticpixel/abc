@@ -15,6 +15,20 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-05-22
+
+### Added
+
+- Real screen-recorded hero GIF (`examples/demo-full.gif`, ~3.3MB) replacing the `vhs`-rendered one from 0.7.2 that had the font-fallback letter-spacing bug. Shows a live Claude Code session moving through `/abc:plan` → `/abc:scaffold-sub-issues-gh` → `/abc:ship-epic-gh` end-to-end, ending on *"10 of 10 merged · parent closed · cron self-cancelled."*
+
+### Changed
+
+- README hero — embed restored at the top, now pointing at `examples/demo-full.gif`. Caption rewritten to lead with the GIF and refer the reader to the screenshot strip below for live-issue verification. The "watching for longer than 30s?" link to a separate long-arc GIF is gone — there's one canonical demo now.
+
+### Removed
+
+- `examples/demo.gif` — the short synthetic `vhs` GIF. The single recorded session covers both elevator-pitch and full-arc, so a separate short version is no longer needed. `demo.tape`, `demo-full.tape`, and `scripts/play-demo*.sh` stay in the repo as the scripted alternative path for anyone who wants to fork the synthetic approach.
+
 ## [0.7.3] - 2026-05-21
 
 ### Changed
@@ -102,7 +116,8 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `scripts/validate-plugin.py` + `.github/workflows/validate.yml` — manifest + skill/agent frontmatter validation on every push and PR. Catches JSON drift, version mismatch between `marketplace.json` and `plugin.json`, missing YAML frontmatter, hook executable bit loss. ([#2](https://github.com/semanticpixel/abc/pull/2))
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
-[Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.3...HEAD
+[Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.4...HEAD
+[0.7.4]: https://github.com/semanticpixel/abc/releases/tag/v0.7.4
 [0.7.3]: https://github.com/semanticpixel/abc/releases/tag/v0.7.3
 [0.7.2]: https://github.com/semanticpixel/abc/releases/tag/v0.7.2
 [0.7.1]: https://github.com/semanticpixel/abc/releases/tag/v0.7.1
