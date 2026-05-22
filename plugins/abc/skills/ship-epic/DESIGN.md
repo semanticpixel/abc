@@ -53,7 +53,7 @@ Built from Linear issue relations on each sub-issue:
 
 1. Resolve parent → sub-issue list (mirror `/ship-issue` Phase 0; for `milestone:` args, same expansion).
 2. If only one sub-issue resolves → reject with "use `/ship-issue` for single tickets."
-3. Self-arm `/loop 10m /ship-epic <raw-arg>` if no matching cron entry exists. Reuse `/ship-issue`'s cron-entry match rule (substring + word boundary) so re-invocations are idempotent.
+3. Self-arm `/loop 10m <command-name> <raw-arg>` if no matching cron entry exists — substituting the captured `<command-name>` (the slash-command name Claude Code injects, e.g. `/abc:ship-epic`) verbatim. Reuse `/ship-issue`'s cron-entry match rule (captured `<command-name>` + word boundary, permissive regex fallback) so re-invocations are idempotent.
 
 ### Phase 1: Build dependency graph
 
@@ -110,6 +110,12 @@ Next wake: /loop 10m /ship-epic PROJ-100
 - **All sub-issues `merged`** → transition parent to Done, `CronDelete` the epic's loop, halt. Worker loops should already have self-cancelled per `/ship-issue` Phase 7.
 - **Any sub-issue `failed`** → halt the epic, `CronDelete` the epic's loop AND all in-flight worker loops, write `<!-- ship-epic:event:failed -->` on the parent. **Open question**: should we let the rest finish? v1: halt — a cross-repo failure usually means the design has a problem worth pausing for. Easy to flip if it's wrong.
 - **Any sub-issue `blocked-user`** → leave the epic loop running. Other workers can keep making progress; the blocked one waits for the human. Surface in the terminal block but don't halt the epic.
+
+## Locked decisions
+
+Don't re-litigate without a new round of architect review:
+
+1. **Cron-entry match via captured `<command-name>` + permissive regex fallback.** Phase 0's self-arm check reads the slash-command name Claude Code injects at invocation time (e.g. `/abc:ship-epic`) and uses it verbatim in both the cron arming string and the subsequent match check. A permissive regex (`(?:[A-Za-z][A-Za-z0-9_-]*:)?ship-epic`) is the fallback for environments where `<command-name>` isn't reachable. This fixes a real-world correctness bug where hardcoding `/ship-epic` failed to match plugin-namespaced cron entries and caused every wake to duplicate-arm.
 
 ## Open questions (deliberately not resolved in v1)
 

@@ -137,7 +137,13 @@ The user invokes `/ship-issue <arg>` once. The skill itself is responsible for a
 
 Used by both the arm check (below) and the self-cancel in Stop conditions. **Define it once, reference it by name** — these two checks must stay in lockstep, and past edits have drifted when the rule was described inline twice.
 
-> A `CronList` entry **matches** this invocation when its command string contains the substring `/ship-issue <raw-arg>` **followed by a word boundary** — the next character (if any) must NOT be alphanumeric, `-`, or `,`. This prevents `PROJ-1` from false-matching `PROJ-10` (prefix) or `PROJ-1,PROJ-2` (comma continuation). The boundary check works whether `CronList` reports the entry as the wrapped `/loop 6m /ship-issue <raw-arg>` or the inner `/ship-issue <raw-arg>`.
+> A `CronList` entry **matches** this invocation when its command string contains `<command-name> <raw-arg>` **followed by a word boundary** — the next character (if any) must NOT be alphanumeric, `-`, or `,`. `<command-name>` is the literal slash-command name Claude Code injects for this invocation (e.g. `/ship-issue` when invoked top-level, or `/<plugin>:ship-issue` when invoked through a plugin namespace — verify from the `<command-name>` tag Claude Code passes at invocation time, including on `/loop`-triggered wakes where the inner command name is still surfaced).
+>
+> Reading the **actually-injected** name — rather than hardcoding `/ship-issue` — is load-bearing for plugin-namespaced invocations: the hardcoded substring `/ship-issue` is **not** present in `/abc:ship-issue <raw-arg>` (the prefix is `/abc:`, not `/`), so the match always failed and every wake duplicate-armed a new cron.
+>
+> **Fallback regex** when `<command-name>` isn't reachable (older Claude Code versions, edge cases): test the entry's command string against `(?:^|[^A-Za-z0-9])(?:[A-Za-z][A-Za-z0-9_-]*:)?ship-issue <raw-arg>(?![A-Za-z0-9_,-])`. The optional `<plugin>:` prefix capture covers any plugin-namespacing scheme; the trailing negative-lookahead is the same boundary class as the strict rule. This still prevents `PROJ-1` from false-matching `PROJ-10` (prefix) or `PROJ-1,PROJ-2` (comma continuation).
+>
+> The boundary check works whether `CronList` reports the entry as the wrapped `/loop 6m <command-name> <raw-arg>` or the inner `<command-name> <raw-arg>`.
 
 #### Arm check
 
@@ -145,7 +151,7 @@ Evaluated at the start of every wake:
 
 1. Call `CronList` to enumerate active scheduled tasks in the current session.
 2. Apply the cron-entry match rule above to each entry.
-3. If no match → invoke `Skill(skill: "loop", args: "6m /ship-issue <raw-arg>")` to arm the cron.
+3. If no match → invoke `Skill(skill: "loop", args: "6m <command-name> <raw-arg>")` to arm the cron — substituting the captured `<command-name>` verbatim, not a hardcoded skill name.
 4. If a match → no-op. This is the common path on loop-triggered wakes.
 
 The match key is the **full raw arg string**. So `/ship-issue PROJ-89,PROJ-90` is one loop that walks the two tickets in user-specified order. A separate invocation with a different arg — e.g. the user types `/ship-issue PROJ-91` later — gets its own independent cron.
@@ -257,6 +263,7 @@ Don't re-litigate in the implementation ticket without a new round of architect 
 8. **Platform adapter**: auto-detect from `git remote get-url origin` per repo. GitHub → `gh`, GitLab → `glab`, anything else → blocked-user.
 9. **Per-item `repo:` label resolution**: for each item (single ticket, list item, or sub-task), at most one `repo:<name>` label is resolved to a subdirectory of cwd. Zero labels falls back to the cwd git repo (blocked-user only when cwd is not inside a git repo). Multiple labels are blocked. No config file, no auto-inference from title/paths.
 10. **Skill-commit marker is HTML-comment-primary, trailer-fallback.** Commits always write the `<!-- ship-issue:commit -->` HTML marker; the `Co-Authored-By: Claude` trailer is added by default but dropped when any reachable `CLAUDE.md` mentions `Co-Authored-By`. Phase 3's lookup checks the HTML marker first and falls back to the trailer for historical commits made before this scheme landed.
+11. **Cron-entry match via captured `<command-name>` + permissive regex fallback.** Phase 0.5's self-arm check reads the slash-command name Claude Code injects at invocation time (e.g. `/abc:ship-issue`) and uses it verbatim in both the cron arming string and the subsequent match check. A permissive regex (`(?:[A-Za-z][A-Za-z0-9_-]*:)?ship-issue`) is the fallback for environments where `<command-name>` isn't reachable. This fixes a real-world correctness bug where hardcoding `/ship-issue` failed to match plugin-namespaced cron entries and caused every wake to duplicate-arm.
 
 ## Open questions for the implementation ticket
 

@@ -106,14 +106,20 @@ The skill arms its own `/loop` so the user invokes once and walks away. This pha
 
 Used by both this phase's arm check and Phase 7's self-cancel. **Defined once here, referenced by name** — these two checks must stay in lockstep, and past edits have drifted when the rule was inlined twice.
 
-> A `CronList` entry **matches** this invocation when its command string contains the substring `/ship-issue <raw-arg>` **followed by a word boundary** — the next character (if any) must NOT be alphanumeric, `-`, or `,`. This prevents `/ship-issue PROJ-1` from false-matching an entry for `/ship-issue PROJ-10` (substring match alone would match because `PROJ-1` is a prefix) or `/ship-issue PROJ-1,PROJ-2` (comma continuation). Boundary check works whether `CronList` reports the wrapped form `/loop 6m /ship-issue <raw-arg>` or the inner `/ship-issue <raw-arg>`.
+> A `CronList` entry **matches** this invocation when its command string contains `<command-name> <raw-arg>` **followed by a word boundary** — the next character (if any) must NOT be alphanumeric, `-`, or `,`. `<command-name>` is the literal slash-command name Claude Code injects for this invocation (e.g. `/ship-issue` when invoked top-level, or `/<plugin>:ship-issue` when invoked through a plugin namespace — verify from the `<command-name>` tag Claude Code passes at invocation time, including on `/loop`-triggered wakes where the inner command name is still surfaced).
+>
+> Reading the **actually-injected** name — rather than hardcoding `/ship-issue` — is load-bearing for plugin-namespaced invocations: the hardcoded substring `/ship-issue` is **not** present in `/abc:ship-issue <raw-arg>` (the prefix is `/abc:`, not `/`), so the match always failed and every wake duplicate-armed a new cron.
+>
+> **Fallback regex** when `<command-name>` isn't reachable (older Claude Code versions, edge cases): test the entry's command string against `(?:^|[^A-Za-z0-9])(?:[A-Za-z][A-Za-z0-9_-]*:)?ship-issue <raw-arg>(?![A-Za-z0-9_,-])`. The optional `<plugin>:` prefix capture covers any plugin-namespacing scheme; the trailing negative-lookahead is the same boundary class as the strict rule. This still prevents `PROJ-1` from false-matching an entry for `PROJ-10` (prefix) or `PROJ-1,PROJ-2` (comma continuation).
+>
+> Boundary check works whether `CronList` reports the wrapped form `/loop 6m <command-name> <raw-arg>` or the inner `<command-name> <raw-arg>`.
 
 ### Arm check
 
 1. Call `CronList` to enumerate active scheduled tasks in the current session.
 2. Apply the cron-entry match rule above to each entry.
 3. If a match is found → no-op, proceed to Phase 1. This is the common path on loop-triggered wakes.
-4. If no match → the user invoked `/ship-issue <raw-arg>` directly without a `/loop` wrapper (the expected first-invocation case). Invoke `Skill(skill: "loop", args: "6m /ship-issue <raw-arg>")` to arm the cron, then proceed to Phase 1.
+4. If no match → the user invoked `<command-name> <raw-arg>` directly without a `/loop` wrapper (the expected first-invocation case). Invoke `Skill(skill: "loop", args: "6m <command-name> <raw-arg>")` to arm the cron — substituting the **captured `<command-name>`**, not a hardcoded skill name. This is what makes the next wake's match check succeed against this cron entry. Then proceed to Phase 1.
 
 **Match key is the full raw arg string.** Two separate invocations with different args → two independent loops. This is intentional: a second list (`/ship-issue PROJ-91`) shouldn't interfere with an in-flight one (`/ship-issue PROJ-89,PROJ-90`).
 
