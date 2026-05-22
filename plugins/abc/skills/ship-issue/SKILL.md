@@ -72,9 +72,12 @@ Normalize `$ARGUMENTS` into an ordered list of Linear ticket IDs. The branch tak
 ### Shape detection (in order, first match wins)
 
 1. **Starts with `milestone:`** → milestone expansion (below).
-2. **Is a Linear URL** (`https://linear.app/<org>/issue/<id>`) → strip prefix, extract `TEAM-N` identifier, continue as single ID.
-3. **Contains a comma** → split on commas → comma-list flow.
-4. **Otherwise** → single-ID flow; check for sub-issues via `list_issues` with `parentId=<id>`; if present, replace with the sub-issue IDs in the API's return order; if none, keep the single ID.
+2. **Is a Linear issue URL** (`https://linear.app/<org>/issue/<id>`) → strip prefix, extract `TEAM-N` identifier, continue as single ID.
+3. **Is a Linear project URL** (`https://linear.app/<org>/project/<slug>/...`) — these are project overview / issues / triage URLs that don't point at a single ticket:
+   - If the URL contains a `#milestone-<uuid>` fragment (e.g. `.../project/foo/overview#milestone-abc-123`), extract the UUID and route through the **milestone expansion** path below, as if the user had typed `milestone:<uuid>`. The fragment regex is `#milestone-([0-9a-fA-F-]+)` (UUID may contain hex digits and dashes).
+   - Otherwise (no fragment, or a fragment that isn't `milestone-<uuid>`) → `blocked-user` with reason `project-url-without-milestone-fragment`. The block message lists the four supported shapes: a single ticket (`PROJ-88`), a Linear issue URL, a comma-separated list, and a milestone (`milestone:<uuid>` or a project URL with a `#milestone-<uuid>` fragment). Do not proceed to Phase 0.5 — no cron arming.
+4. **Contains a comma** → split on commas → comma-list flow.
+5. **Otherwise** → single-ID flow; check for sub-issues via `list_issues` with `parentId=<id>`; if present, replace with the sub-issue IDs in the API's return order; if none, keep the single ID.
 
 ### Milestone expansion
 
