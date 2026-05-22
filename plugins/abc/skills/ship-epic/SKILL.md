@@ -42,9 +42,12 @@ See [`DESIGN.md`](./DESIGN.md) for the architectural design rationale. This file
 
 `$ARGUMENTS` is one of:
 
-1. **Linear URL** → strip prefix, extract `TEAM-N`.
-2. **Bare ID** (e.g. `PROJ-100`) → use as-is.
-3. **`milestone:<uuid>`** → expand via the same logic as `/abc:ship-issue` Phase 0 milestone expansion: resolve to project, list non-terminal issues, filter by milestone, order by `createdAt`. For `/abc:ship-epic`, the resulting list IS the sub-issue set (no parent created). The "parent" for status aggregation is the milestone itself — write `<!-- ship-epic:* -->` comments on each milestone issue's project rather than a parent issue. (Open question: is this useful? v1 supports the case but the cleanest input is a real parent ID.)
+1. **Linear issue URL** (`https://linear.app/<org>/issue/<id>`) → strip prefix, extract `TEAM-N` (the parent ID).
+2. **Linear project URL** (`https://linear.app/<org>/project/<slug>/...`) — project overview / issues / triage URLs that don't point at a parent issue:
+   - If the URL contains a `#milestone-<uuid>` fragment (regex `#milestone-([0-9a-fA-F-]+)`), extract the UUID and route through the `milestone:<uuid>` path below (rule #4).
+   - Otherwise → `blocked-user` with reason `project-url-without-milestone-fragment`. The block message lists the three supported shapes: bare parent ID (`PROJ-100`), parent issue URL, and milestone (`milestone:<uuid>` or a project URL with a `#milestone-<uuid>` fragment). Do not proceed to Phase 0.5 — no cron arming.
+3. **Bare ID** (e.g. `PROJ-100`) → use as-is.
+4. **`milestone:<uuid>`** → expand via the same logic as `/abc:ship-issue` Phase 0 milestone expansion: resolve to project, list non-terminal issues, filter by milestone, order by `createdAt`. For `/abc:ship-epic`, the resulting list IS the sub-issue set (no parent created). The "parent" for status aggregation is the milestone itself — write `<!-- ship-epic:* -->` comments on each milestone issue's project rather than a parent issue. (Open question: is this useful? v1 supports the case but the cleanest input is a real parent ID.)
 
 For the rest of this doc, assume **bare PARENT-ID** unless noted.
 
