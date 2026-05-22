@@ -192,13 +192,25 @@ Apply these rules **in order** — first match wins. Phase 3 is the single point
 1. **Classify each failing check per-check first**, before evaluating the table rows. For each completed-failure check, decide: assertion-type (unit/lint/type/code-review-bot-with-findings) or infra-type (secrets, dep resolution, runner error, no test output). If a check's failure is ambiguous (timeout, opaque build failure, no discernible output), classify it as infra-type. Rationale: a false escalation is a minor interruption, but burning a three-strikes attempt on an infra failure wastes the counter and leaves the real issue invisible.
 2. **After per-check classification, evaluate rows 3a / 3b against the post-classification set.** If any assertion-type check remains failing, row 3a fires (first-match-wins) and an accompanying infra failure is *not* independently surfaced that wake — it will re-surface on a later wake (once the assertion check clears, only infra remains, and row 3b fires). If *no* assertion-type check remains after step 1's reclassification (e.g. the only failing check was ambiguous and got reclassified to infra), row 3a does not fire; row 3b may.
 
-**Defining "the last skill commit"** (used in rows 3, 3a, 3b, 4): the most recent commit on the PR branch whose message contains a literal `Co-Authored-By: Claude` trailer. Find it with:
+**Defining "the last skill commit"** (used in rows 3, 3a, 3b, 4): the most recent commit on the PR/MR branch carrying the skill's commit marker. Check the `<!-- ship-issue:commit -->` HTML comment in the commit body first — this is the primary marker, written on every skill commit (see the **Skill-commit marker** rule below). Fall back to the legacy `Co-Authored-By: Claude` trailer for commits made before the HTML marker landed (or where a human pushed the initial commits without either marker):
 
 ```
+git -C <workdir> log <pr-branch> --grep="<!-- ship-issue:commit -->" -1 --format="%H %ai"
+# if empty, fall back to the legacy trailer:
 git -C <workdir> log <pr-branch> --grep="Co-Authored-By: Claude" -1 --format="%H %ai"
 ```
 
-If no such commit exists on the branch (e.g. a human pushed the initial commits), treat **all** open review comments as new.
+If neither marker exists on the branch, treat **all** open review comments as new.
+
+**Skill-commit marker — what to write on commits** (Phase 4 references this rule by name):
+
+- **Always** include a `<!-- ship-issue:commit -->` HTML comment line in the commit body. Anchors the Phase 3 lookup above and is scoped under the existing `<!-- ship-issue:* -->` namespace.
+- **By default**, also include a `Co-Authored-By: Claude <noreply@anthropic.com>` trailer (exact string) for backward-compat with historical skill-commit detection.
+- **Skip the trailer** when any reachable `CLAUDE.md` forbids it. Detection: case-insensitive grep for `co-authored-by` across the workdir's `CLAUDE.md`, any ancestor `CLAUDE.md` walking up to `/`, and `~/.claude/CLAUDE.md` — any hit ⇒ skip the trailer (the HTML marker alone is sufficient). The heuristic is conservative on purpose: a false positive only omits a redundant trailer, while a false negative would violate a documented policy. One-shot detection:
+
+  ```
+  grep -liE "co-authored-by" <reachable-CLAUDE-md-paths> 2>/dev/null | head -1
+  ```
 
 Never reset a ticket that Linear shows as In Progress or In Review. Resume.
 
@@ -212,7 +224,7 @@ Never reset a ticket that Linear shows as In Progress or In Review. Resume.
 2. Write a Linear comment noting start: `<!-- ship-issue:event:started --> 🚢 ship-issue started.`
 3. `cd` to the resolved workdir. Pull latest `main`/`master`. Create a feature branch from the ticket's `gitBranchName` (Linear provides this on the issue object).
 4. Read the full ticket description. Implement against the acceptance criteria. Run the repo's local checks (`pnpm test`, `pnpm lint`, etc. — read `package.json` scripts or an existing CLAUDE.md for the correct commands).
-5. Commit with a descriptive body explaining the *why*. Add a `Co-Authored-By: Claude <noreply@anthropic.com>` trailer — this exact string, regardless of which Claude model is running the skill, so the Phase 3 "last skill commit" lookup (`git log --grep="Co-Authored-By: Claude"`) is reliable.
+5. Commit with a descriptive body explaining the *why*. Follow the **Skill-commit marker** rule (Phase 3 supporting rules): always include a `<!-- ship-issue:commit -->` HTML comment in the commit body (the primary signal for the Phase 3 "last skill commit" lookup); include a `Co-Authored-By: Claude <noreply@anthropic.com>` trailer unless a reachable `CLAUDE.md` forbids it.
 6. Push the branch.
 7. Open the PR/MR using the platform CLI. Include a Linear Magic URL reference in the body (e.g. `Closes PROJ-88` or a `Linear: <issue-url>` line) so the issue auto-links.
 8. Transition Linear to `In Review`. Record the PR URL via `save_issue`'s `links` field.
@@ -250,7 +262,7 @@ Entered from Phase 3 row 3 (new review comments) or row 3a (failing assertion CI
    - A check **command fails to run** (non-zero exit with no test output, command-not-found, runner crash) → `blocked-user` with reason `local-check-command-failed:<command>`. Do not commit, do not push.
    - A check **runs and reports a failure** that is *not* the one the fix was intended to resolve (a new regression in an unrelated area) → `blocked-user` with reason `local-check-regression:<failing-check>`. Do not commit, do not push.
    - A check still reports the failure the fix was intended to resolve → go back to step 2; the fix isn't done.
-4. Commit with a descriptive message referencing the comment thread ID or the reviewer's ask, plus the standard `Co-Authored-By: Claude <noreply@anthropic.com>` trailer. Push.
+4. Commit with a descriptive message referencing the comment thread ID or the reviewer's ask. Follow the **Skill-commit marker** rule (Phase 3 supporting rules) — same marker conventions as `pending → implementing` step 5. Push.
 5. On each comment thread, reply with a short note referencing the fix commit SHA: `Fixed in abc1234.`
 6. Return — the next wake's Phase 3 will re-derive state from the new PR/CI reality. **Reaching this step is the success signal to Phase 5** (it's how Phase 5 step 4 knows the fix commit pushed cleanly and the counter can be incremented). If any earlier step transitioned to `blocked-user` or `failed`, execution never reaches here and Phase 5 does not write a failcount comment for this wake.
 

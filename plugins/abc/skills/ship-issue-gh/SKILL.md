@@ -176,13 +176,25 @@ Apply these rules **in order** — first match wins. Phase 3 is the single point
 
 **Edge cases for rows 3a / 3b** — same per-check classification then row evaluation as the Linear sibling.
 
-**Defining "the last skill commit"** (used in rows 3, 3a, 3b, 4): the most recent commit on the PR branch whose message contains a literal `Co-Authored-By: Claude` trailer. Find it with:
+**Defining "the last skill commit"** (used in rows 3, 3a, 3b, 4): the most recent commit on the PR branch carrying the skill's commit marker. Check the `<!-- ship-issue:commit -->` HTML comment in the commit body first — this is the primary marker, written on every skill commit (see the **Skill-commit marker** rule below). Fall back to the legacy `Co-Authored-By: Claude` trailer for commits made before the HTML marker landed:
 
 ```
+git -C <workdir> log <pr-branch> --grep="<!-- ship-issue:commit -->" -1 --format="%H %ai"
+# if empty, fall back to the legacy trailer:
 git -C <workdir> log <pr-branch> --grep="Co-Authored-By: Claude" -1 --format="%H %ai"
 ```
 
-If no such commit exists on the branch, treat **all** open review comments as new.
+If neither marker exists on the branch, treat **all** open review comments as new.
+
+**Skill-commit marker — what to write on commits** (Phase 4 references this rule by name):
+
+- **Always** include a `<!-- ship-issue:commit -->` HTML comment line in the commit body. Anchors the Phase 3 lookup above and is scoped under the existing `<!-- ship-issue:* -->` namespace, so it doubles as a Skill-authored audit signal in `git log`.
+- **By default**, also include a `Co-Authored-By: Claude <noreply@anthropic.com>` trailer (exact string) for backward-compat with historical skill-commit detection.
+- **Skip the trailer** when any reachable `CLAUDE.md` forbids it. Detection: case-insensitive grep for `co-authored-by` across the workdir's `CLAUDE.md`, any ancestor `CLAUDE.md` walking up to `/`, and `~/.claude/CLAUDE.md` — any hit ⇒ skip the trailer (the HTML marker alone is sufficient). The heuristic is intentionally conservative — a false positive only omits a redundant trailer, while a false negative would violate a documented policy. One-shot detection:
+
+  ```
+  grep -liE "co-authored-by" <reachable-CLAUDE-md-paths> 2>/dev/null | head -1
+  ```
 
 Never reset an issue that already has a `status:in-progress` or `status:in-review` label. Resume.
 
@@ -196,7 +208,7 @@ Never reset an issue that already has a `status:in-progress` or `status:in-revie
 2. Write a start comment: `gh issue comment <n> --repo <owner>/<repo> --body '<!-- ship-issue:event:started --> 🚢 ship-issue-gh started.'`
 3. `cd` to the resolved workdir. Pull latest `main`/`master`. **Derive the branch name** from the issue: `<n>-<kebab-title>` where `<title>` is lowercased, non-alphanumerics replaced with `-`, repeated `-` collapsed, leading/trailing `-` trimmed, truncated to 60 chars. ASCII-only — strip diacritics. Example: issue #42 "Add Avatar primitive" → `42-add-avatar-primitive`. Create the branch from `main`.
 4. Read the full issue body. Implement against the acceptance criteria. Run the repo's local checks (read `package.json` scripts or an existing CLAUDE.md for the correct commands).
-5. Commit with a descriptive body explaining the *why*. Add a `Co-Authored-By: Claude <noreply@anthropic.com>` trailer — this exact string, so the Phase 3 "last skill commit" lookup is reliable.
+5. Commit with a descriptive body explaining the *why*. Follow the **Skill-commit marker** rule (Phase 3 supporting rules): always include a `<!-- ship-issue:commit -->` HTML comment in the commit body; include a `Co-Authored-By: Claude <noreply@anthropic.com>` trailer unless a reachable `CLAUDE.md` forbids it.
 6. Push the branch.
 7. Open the PR using `gh pr create`. The body **must** include `Closes <owner>/<repo>#<n>` (use the fully-qualified form even for same-repo, so cross-repo parent linking is consistent). This triggers GitHub's auto-close on merge.
 8. Swap labels: remove `status:in-progress`, add `status:in-review`. `gh issue edit <n> --remove-label status:in-progress --add-label status:in-review`.
@@ -230,7 +242,7 @@ Entered from Phase 3 row 3 (new review comments) or row 3a (failing assertion CI
    - **@-mention of Claude** → treat as a direct user instruction; read it. If it needs clarification → `blocked-user` with reason `user-mention-ambiguous`. Otherwise act on it.
 2. Make the fix in the workdir.
 3. **Before committing, re-run the repo's local checks**. Interpret results identically to the Linear sibling: passes → step 4; command-fail → `blocked-user`; new regression → `blocked-user`; same failure → back to step 2.
-4. Commit with a descriptive message referencing the thread / reviewer / check, plus the standard `Co-Authored-By: Claude <noreply@anthropic.com>` trailer. Push.
+4. Commit with a descriptive message referencing the thread / reviewer / check. Follow the **Skill-commit marker** rule (Phase 3 supporting rules) — same marker conventions as `pending → implementing` step 5. Push.
 5. On each comment thread, reply with a short note referencing the fix commit SHA: `Fixed in abc1234.` Use `gh api /repos/<owner>/<repo>/pulls/<pr>/comments/<comment-id>/replies -f body=<text>` for inline review threads, or `gh pr comment <pr>` for top-level comments.
 6. Return — the next wake's Phase 3 will re-derive state. **Reaching this step is the success signal to Phase 5.**
 
