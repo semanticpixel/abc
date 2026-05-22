@@ -186,6 +186,18 @@ The skill stops and asks, it doesn't guess, when:
 
 **The skill keeps no in-memory state across sessions.** Linear, GitHub, and GitLab are the sources of truth. Durable state (e.g. retry counters — see escape hatches) goes in Linear comments using the canonical format `<!-- ship-issue:<category>:<key>=<value> -->`. The skill re-reads its own notes on re-invocation. Example: `<!-- ship-issue:failcount:github:ci/test=2 -->` (see escape hatches for the concrete use).
 
+### Skill-commit marker — dual-mode (HTML primary, trailer fallback)
+
+Phase 3's "last skill commit" lookup is the load-bearing signal that distinguishes "review comments since my last push" from "all open review comments" (relevant on the `fixing` rows). Earlier iterations anchored detection on a `Co-Authored-By: Claude` trailer in the commit message — convenient because git carries trailers across rebases and squashes, but this conflicts with user/repo policies that forbid AI-attribution trailers ("no AI attribution" rules are increasingly common in `CLAUDE.md`).
+
+The skill now anchors detection on an `<!-- ship-issue:commit -->` HTML comment in the commit body. The marker:
+
+- Is not an author attribution, so policies forbidding `Co-Authored-By: Claude` don't apply to it.
+- Survives normal squash-merge (the commit body is preserved as the squashed message body) but **not** a rebase-with-fixup-squash that drops the body — that's a pre-existing limitation of any in-body marker, and matches the trailer's failure mode.
+- Lives under the existing `<!-- ship-issue:* -->` marker namespace already used for durable Linear-comment state.
+
+The legacy `Co-Authored-By: Claude` trailer is retained as a **fallback** in the Phase 3 lookup so historical commits (already merged or in-flight before the marker landed) continue to be detected. Phase 4 commit handlers write **both** markers by default and drop the trailer only when any reachable `CLAUDE.md` (workdir's, any ancestor walking up to `/`, or `~/.claude/CLAUDE.md`) contains a case-insensitive mention of `Co-Authored-By` — a coarse heuristic that catches "never include `Co-Authored-By`" policies without prose parsing. The conservative bias is intentional: a false positive only omits a redundant trailer (the HTML marker still anchors detection); a false negative would violate a documented policy.
+
 On every invocation the skill:
 
 1. Looks up each ticket's current Linear state, all linked PRs (open and closed), and any ship-issue Linear comments it previously wrote.
@@ -244,6 +256,7 @@ Don't re-litigate in the implementation ticket without a new round of architect 
 7. Auto-verify deferred to Phase C; `blocked-verify` escapes to `blocked-user` in the interim.
 8. **Platform adapter**: auto-detect from `git remote get-url origin` per repo. GitHub → `gh`, GitLab → `glab`, anything else → blocked-user.
 9. **Per-item `repo:` label resolution**: for each item (single ticket, list item, or sub-task), at most one `repo:<name>` label is resolved to a subdirectory of cwd. Zero labels falls back to the cwd git repo (blocked-user only when cwd is not inside a git repo). Multiple labels are blocked. No config file, no auto-inference from title/paths.
+10. **Skill-commit marker is HTML-comment-primary, trailer-fallback.** Commits always write the `<!-- ship-issue:commit -->` HTML marker; the `Co-Authored-By: Claude` trailer is added by default but dropped when any reachable `CLAUDE.md` mentions `Co-Authored-By`. Phase 3's lookup checks the HTML marker first and falls back to the trailer for historical commits made before this scheme landed.
 
 ## Open questions for the implementation ticket
 

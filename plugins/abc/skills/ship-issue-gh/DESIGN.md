@@ -105,6 +105,18 @@ The Linear sibling persists state via Linear comments with `<!-- ship-issue:* --
 - Comment **edits** are visible via `gh api .../comments/<id>` but edit history isn't reliably exposed. **Always append a new comment** rather than editing an existing one. This matches the Linear sibling's contract but the reason is different — Linear hides edit history too, but GitHub's pagination makes appended comments easier to scan.
 - The well-known bot accounts for code-review automation aren't standardised — the bot identity is read from the PR comments and matched against the user's `~/.claude/review-bots.md` allowlist if present, else a default set (Renovate, Dependabot, common code-review bots). Defaulting to `noise` rather than `fixable-code` on unknown bots is safer.
 
+## Skill-commit marker — dual-mode (HTML primary, trailer fallback)
+
+Phase 3's "last skill commit" lookup is the load-bearing signal that distinguishes "review comments since my last push" from "all open review comments" (relevant on rows 3, 3a, 3b, 4). Earlier iterations anchored detection on a `Co-Authored-By: Claude` trailer in the commit message — convenient because git carries trailers across rebases and squashes, but this conflicts with user/repo policies that forbid AI-attribution trailers ("no AI attribution" rules are increasingly common in `CLAUDE.md`, including the user's global one and the abc-repo CLAUDE.md itself).
+
+The skill now anchors detection on an `<!-- ship-issue:commit -->` HTML comment in the commit body. The marker:
+
+- Is not an author attribution, so policies forbidding `Co-Authored-By: Claude` don't apply to it.
+- Survives normal squash-merge (the commit body is preserved as the squashed message body) but **not** a rebase-with-fixup-squash that drops the body — that's a pre-existing limitation of any in-body marker, and matches the trailer's failure mode.
+- Lives under the existing `<!-- ship-issue:* -->` marker namespace already used for durable issue-comment state, so the grep is unambiguous against other comment HTML in commit messages.
+
+The legacy `Co-Authored-By: Claude` trailer is retained as a **fallback** in the Phase 3 lookup so historical commits (already merged or in-flight before the marker landed) continue to be detected. Phase 4 commit handlers write **both** markers by default and drop the trailer only when any reachable `CLAUDE.md` (workdir's, any ancestor walking up to `/`, or `~/.claude/CLAUDE.md`) contains a case-insensitive mention of `Co-Authored-By` — a coarse heuristic that catches "never include `Co-Authored-By`" policies without requiring prose parsing. The conservative bias is intentional: if `Co-Authored-By` is mentioned in `CLAUDE.md`, assume it's forbidden. False positives just omit a redundant trailer (the HTML marker still anchors detection); false negatives would violate a documented policy.
+
 ## Three-strikes counter — same shape, GitHub-keyed
 
 The key format is `github:<check-name>` — the Linear sibling uses `<platform>:<check-name>` because Linear can drive both GitHub and GitLab checks, but here every check is a GitHub check-run name. Dropping the platform prefix would make migration ambiguous if the Linear sibling ever needed to read this skill's markers (it doesn't, but the cost of the prefix is one extra `github:` per comment).
@@ -145,6 +157,7 @@ Don't re-litigate without a new round of architect review:
 7. **Auto-verify deferred** to Phase C.
 8. **Branch derivation is deterministic, no `gh issue develop` in v1.** Keeps the skill resilient to `gh` version drift.
 9. **Comma-list args must be fully-qualified.** No `#<n>` shorthand in lists — too easy to misroute across repos.
+10. **Skill-commit marker is HTML-comment-primary, trailer-fallback.** Commits always write the `<!-- ship-issue:commit -->` HTML marker; the `Co-Authored-By: Claude` trailer is added by default but dropped when any reachable `CLAUDE.md` mentions `Co-Authored-By`. Phase 3's lookup checks the HTML marker first and falls back to the trailer for historical commits made before this scheme landed.
 
 ## Open questions
 
