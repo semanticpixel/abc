@@ -213,12 +213,33 @@ Never reset an issue that already has a `status:in-progress` or `status:in-revie
 1. Add `status:in-progress` label: `gh issue edit <n> --repo <owner>/<repo> --add-label status:in-progress`. (Confirm the label exists; create it with `gh label create` if missing — should already exist if `scaffold-sub-issues-gh` set up the repo.)
 2. Write a start comment: `gh issue comment <n> --repo <owner>/<repo> --body '<!-- ship-issue:event:started --> 🚢 ship-issue-gh started.'`
 3. `cd` to the resolved workdir. Pull latest `main`/`master`. **Derive the branch name** from the issue: `<n>-<kebab-title>` where `<title>` is lowercased, non-alphanumerics replaced with `-`, repeated `-` collapsed, leading/trailing `-` trimmed, truncated to 60 chars. ASCII-only — strip diacritics. Example: issue #42 "Add Avatar primitive" → `42-add-avatar-primitive`. Create the branch from `main`.
-4. Read the full issue body. Implement against the acceptance criteria. Run the repo's local checks (read `package.json` scripts or an existing CLAUDE.md for the correct commands).
+4. Read the full issue body. Implement against the acceptance criteria. Run the repo's local checks (read `package.json` scripts or an existing CLAUDE.md for the correct commands). After local checks pass, run the **UI-reachability check** (defined below) — ensures the change is reachable from the existing UI, or that the issue carries an explicit note for human validators.
 5. Commit with a descriptive body explaining the *why*. Follow the **Skill-commit marker** rule (Phase 3 supporting rules): always include a `<!-- ship-issue:commit -->` HTML comment in the commit body; include a `Co-Authored-By: Claude <noreply@anthropic.com>` trailer unless a reachable `CLAUDE.md` forbids it.
 6. Push the branch.
 7. Open the PR using `gh pr create`. The body **must** include `Closes <owner>/<repo>#<n>` (use the fully-qualified form even for same-repo, so cross-repo parent linking is consistent). This triggers GitHub's auto-close on merge.
 8. Swap labels: remove `status:in-progress`, add `status:in-review`. `gh issue edit <n> --remove-label status:in-progress --add-label status:in-review`.
 9. State becomes `pr-open`. Return — the `/loop` harness will wake again in 6 minutes.
+
+#### UI-reachability check (referenced by `pending → implementing` step 4 and `implementing (resume)`)
+
+After implementing and running local checks, scan the diff for new files under conventional UI-surface paths:
+
+- `src/pages/**` (Next.js Pages Router, Astro, Nuxt)
+- `pages/**` at repo root (older Next.js, similar)
+- `src/routes/**` and `routes/**` (SvelteKit, SolidStart, Remix, TanStack Router)
+- `app/**` paired with a framework router (Next.js App Router, Remix v2)
+- `src/views/**` (Vue / older conventions)
+- Framework-specific equivalents — use the same heuristic: any path the framework's routing convention treats as a user-reachable route.
+
+**If at least one new UI-surface file was added**, take exactly one of the following actions before opening the PR:
+
+a. **Wire an entry-point.** Add a link in the existing nav, mark up an index/landing page to reference the new surface, or otherwise ensure a human navigating the existing UI can reach the new surface without knowing the URL out-of-band.
+
+b. **Inline a validation note.** If the surface is deliberately orphan (admin-only utility route, deep-link debug page, intentionally-unlinked) or the framework lacks a natural entry-point, post a `<!-- ship-issue:note:reachability -->` comment on the issue stating exactly how a human should reach the new surface during `## Validation` — e.g. *"feature is not reachable from existing UI; navigate to `/foo` directly to verify."*
+
+**Pure-backend changes** (only files outside the UI-surface conventions — `src/lib/`, `src/api/`, `src/server/`, `internal/`, library code, infra, migrations, docs) **skip this step entirely.** No entry-point needed; no validation note required.
+
+**Detection is heuristic** and may misfire — when ambiguous (a path that matches a UI-surface pattern but isn't actually user-reachable, e.g. a `pages/_app.tsx` framework shell, a non-route module under `app/`, or a route gated by feature-flag), err toward (b) — write the validation note rather than fake-wiring an entry-point. The cost of an unnecessary note is one extra comment; the cost of a missing note is a manual validation that quietly skips the new surface.
 
 ### `implementing` (resume)
 

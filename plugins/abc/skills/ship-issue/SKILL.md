@@ -229,12 +229,33 @@ Never reset a ticket that Linear shows as In Progress or In Review. Resume.
 1. Transition Linear status to `In Progress` via `mcp__claude_ai_Linear__save_issue` with `state: "In Progress"`.
 2. Write a Linear comment noting start: `<!-- ship-issue:event:started --> 🚢 ship-issue started.`
 3. `cd` to the resolved workdir. Pull latest `main`/`master`. Create a feature branch from the ticket's `gitBranchName` (Linear provides this on the issue object).
-4. Read the full ticket description. Implement against the acceptance criteria. Run the repo's local checks (`pnpm test`, `pnpm lint`, etc. — read `package.json` scripts or an existing CLAUDE.md for the correct commands).
+4. Read the full ticket description. Implement against the acceptance criteria. Run the repo's local checks (`pnpm test`, `pnpm lint`, etc. — read `package.json` scripts or an existing CLAUDE.md for the correct commands). After local checks pass, run the **UI-reachability check** (defined below) — ensures the change is reachable from the existing UI, or that the ticket carries an explicit note for human validators.
 5. Commit with a descriptive body explaining the *why*. Follow the **Skill-commit marker** rule (Phase 3 supporting rules): always include a `<!-- ship-issue:commit -->` HTML comment in the commit body (the primary signal for the Phase 3 "last skill commit" lookup); include a `Co-Authored-By: Claude <noreply@anthropic.com>` trailer unless a reachable `CLAUDE.md` forbids it.
 6. Push the branch.
 7. Open the PR/MR using the platform CLI. Include a Linear Magic URL reference in the body (e.g. `Closes PROJ-88` or a `Linear: <issue-url>` line) so the issue auto-links.
 8. Transition Linear to `In Review`. Record the PR URL via `save_issue`'s `links` field.
 9. State becomes `pr-open`. Return — the `/loop` harness will wake again in 6 minutes.
+
+#### UI-reachability check (referenced by `pending → implementing` step 4 and `implementing (resume)`)
+
+After implementing and running local checks, scan the diff for new files under conventional UI-surface paths:
+
+- `src/pages/**` (Next.js Pages Router, Astro, Nuxt)
+- `pages/**` at repo root (older Next.js, similar)
+- `src/routes/**` and `routes/**` (SvelteKit, SolidStart, Remix, TanStack Router)
+- `app/**` paired with a framework router (Next.js App Router, Remix v2)
+- `src/views/**` (Vue / older conventions)
+- Framework-specific equivalents — use the same heuristic: any path the framework's routing convention treats as a user-reachable route.
+
+**If at least one new UI-surface file was added**, take exactly one of the following actions before opening the PR/MR:
+
+a. **Wire an entry-point.** Add a link in the existing nav, mark up an index/landing page to reference the new surface, or otherwise ensure a human navigating the existing UI can reach the new surface without knowing the URL out-of-band.
+
+b. **Inline a validation note.** If the surface is deliberately orphan (admin-only utility route, deep-link debug page, intentionally-unlinked) or the framework lacks a natural entry-point, post a `<!-- ship-issue:note:reachability -->` Linear comment on the ticket stating exactly how a human should reach the new surface during `## Validation` — e.g. *"feature is not reachable from existing UI; navigate to `/foo` directly to verify."*
+
+**Pure-backend changes** (only files outside the UI-surface conventions — `src/lib/`, `src/api/`, `src/server/`, `internal/`, library code, infra, migrations, docs) **skip this step entirely.** No entry-point needed; no validation note required.
+
+**Detection is heuristic** and may misfire — when ambiguous (a path that matches a UI-surface pattern but isn't actually user-reachable, e.g. a `pages/_app.tsx` framework shell, a non-route module under `app/`, or a route gated by feature-flag), err toward (b) — write the validation note rather than fake-wiring an entry-point. The cost of an unnecessary note is one extra comment; the cost of a missing note is a manual validation that quietly skips the new surface.
 
 ### `implementing` (resume)
 
