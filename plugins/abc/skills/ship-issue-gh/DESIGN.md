@@ -158,6 +158,7 @@ Don't re-litigate without a new round of architect review:
 8. **Branch derivation is deterministic, no `gh issue develop` in v1.** Keeps the skill resilient to `gh` version drift.
 9. **Comma-list args must be fully-qualified.** No `#<n>` shorthand in lists — too easy to misroute across repos.
 10. **Skill-commit marker is HTML-comment-primary, trailer-fallback.** Commits always write the `<!-- ship-issue:commit -->` HTML marker; the `Co-Authored-By: Claude` trailer is added by default but dropped when any reachable `CLAUDE.md` mentions `Co-Authored-By`. Phase 3's lookup checks the HTML marker first and falls back to the trailer for historical commits made before this scheme landed.
+11. **Cron-entry match via captured `<command-name>` + permissive regex fallback.** Phase 0.5's self-arm check reads the slash-command name Claude Code injects at invocation time (e.g. `/abc:ship-issue-gh`) and uses it verbatim in both the cron arming string and the subsequent match check. A permissive regex (`(?:[A-Za-z][A-Za-z0-9_-]*:)?ship-issue-gh`) is the fallback for environments where `<command-name>` isn't reachable. This fixes a real-world correctness bug where hardcoding `/ship-issue-gh` failed to match plugin-namespaced cron entries and caused every wake to duplicate-arm.
 
 ## Open questions
 

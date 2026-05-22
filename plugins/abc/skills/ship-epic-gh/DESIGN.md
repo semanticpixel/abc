@@ -83,6 +83,7 @@ Don't re-litigate without a new round of architect review:
 6. **Do not halt on `blocked-user`.** Other workers may still be progressing.
 7. **Single host per invocation.** Cross-host (github.com + Enterprise) is rejected at Phase 0.
 8. **Only accept fully-qualified parent IDs.** No bare `#<n>`, no comma-lists, no milestones at the coordinator level.
+9. **Cron-entry match via captured `<command-name>` + permissive regex fallback.** Phase 0's self-arm check reads the slash-command name Claude Code injects at invocation time (e.g. `/abc:ship-epic-gh`) and uses it verbatim in both the cron arming string and the subsequent match check. A permissive regex (`(?:[A-Za-z][A-Za-z0-9_-]*:)?ship-epic-gh`) is the fallback for environments where `<command-name>` isn't reachable. This fixes a real-world correctness bug where hardcoding `/ship-epic-gh` failed to match plugin-namespaced cron entries and caused every wake to duplicate-arm.
 
 ## Open questions (deliberately deferred)
 

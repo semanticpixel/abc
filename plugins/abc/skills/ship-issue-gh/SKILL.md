@@ -99,14 +99,20 @@ Identical contract to the Linear sibling's Phase 0.5 — the skill arms its own 
 
 Defined once here, referenced by name in Phase 7's self-cancel — these two checks must stay in lockstep.
 
-> A `CronList` entry **matches** this invocation when its command string contains the substring `/ship-issue-gh <raw-arg>` **followed by a word boundary** — the next character (if any) must NOT be alphanumeric, `-`, `,`, `/`, or `#`. This prevents `/ship-issue-gh foo/bar#1` from false-matching an entry for `/ship-issue-gh foo/bar#10` (prefix) or `/ship-issue-gh foo/bar#1,foo/bar#2` (comma continuation). The `/` and `#` exclusions are GitHub-ID specific; the Linear sibling's rule doesn't need them because Linear IDs lack those characters. Boundary check works whether `CronList` reports the wrapped form `/loop 6m /ship-issue-gh <raw-arg>` or the inner `/ship-issue-gh <raw-arg>`.
+> A `CronList` entry **matches** this invocation when its command string contains `<command-name> <raw-arg>` **followed by a word boundary** — the next character (if any) must NOT be alphanumeric, `-`, `,`, `/`, or `#`. `<command-name>` is the literal slash-command name Claude Code injects for this invocation (e.g. `/ship-issue-gh` when invoked top-level, or `/<plugin>:ship-issue-gh` when invoked through a plugin namespace — verify from the `<command-name>` tag Claude Code passes at invocation time, including on `/loop`-triggered wakes where the inner command name is still surfaced).
+>
+> Reading the **actually-injected** name — rather than hardcoding `/ship-issue-gh` — is load-bearing for plugin-namespaced invocations: the hardcoded substring `/ship-issue-gh` is **not** present in `/abc:ship-issue-gh <raw-arg>` (the prefix is `/abc:`, not `/`), so the match always failed and every wake duplicate-armed a new cron.
+>
+> **Fallback regex** when `<command-name>` isn't reachable (older Claude Code versions, edge cases): test the entry's command string against `(?:^|[^A-Za-z0-9])(?:[A-Za-z][A-Za-z0-9_-]*:)?ship-issue-gh <raw-arg>(?![A-Za-z0-9_,/#-])`. The optional `<plugin>:` prefix capture covers any plugin-namespacing scheme; the trailing negative-lookahead is the same boundary class as the strict rule. This still prevents `foo/bar#1` from false-matching an entry for `foo/bar#10` (prefix) or `foo/bar#1,foo/bar#2` (comma continuation). The `/` and `#` exclusions are GitHub-ID specific; the Linear sibling's rule doesn't need them.
+>
+> Boundary check works whether `CronList` reports the wrapped form `/loop 6m <command-name> <raw-arg>` or the inner `<command-name> <raw-arg>`.
 
 ### Arm check
 
 1. Call `CronList` to enumerate active scheduled tasks in the current session.
 2. Apply the cron-entry match rule above to each entry.
 3. If a match is found → no-op, proceed to Phase 1. This is the common path on loop-triggered wakes.
-4. If no match → the user invoked `/ship-issue-gh <raw-arg>` directly without a `/loop` wrapper (the expected first-invocation case). Invoke `Skill(skill: "loop", args: "6m /ship-issue-gh <raw-arg>")` to arm the cron, then proceed to Phase 1.
+4. If no match → the user invoked `<command-name> <raw-arg>` directly without a `/loop` wrapper (the expected first-invocation case). Invoke `Skill(skill: "loop", args: "6m <command-name> <raw-arg>")` to arm the cron — substituting the **captured `<command-name>`**, not a hardcoded skill name. This is what makes the next wake's match check succeed against this cron entry. Then proceed to Phase 1.
 
 **Match key is the full raw arg string.** Two separate invocations with different args → two independent loops.
 

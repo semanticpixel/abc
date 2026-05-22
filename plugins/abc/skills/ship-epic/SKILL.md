@@ -57,11 +57,22 @@ If the sub-issue list is empty → reject: "PARENT-ID has no sub-issues. Use `/a
 
 ### Self-arm the loop
 
-Mirror `/abc:ship-issue` Phase 0.5's cron-entry match rule exactly:
+Mirror `/abc:ship-issue` Phase 0.5's cron-entry match rule:
 
-- A `CronList` entry matches when its command string contains `/abc:ship-epic <raw-arg>` followed by a word boundary (next char is not alphanumeric, `-`, or `,`).
+#### Cron-entry match rule
+
+> A `CronList` entry **matches** this invocation when its command string contains `<command-name> <raw-arg>` **followed by a word boundary** — the next character (if any) must NOT be alphanumeric, `-`, or `,`. `<command-name>` is the literal slash-command name Claude Code injects for this invocation (e.g. `/ship-epic` when invoked top-level, or `/<plugin>:ship-epic` when invoked through a plugin namespace — verify from the `<command-name>` tag Claude Code passes at invocation time, including on `/loop`-triggered wakes where the inner command name is still surfaced).
+>
+> Reading the **actually-injected** name — rather than hardcoding `/ship-epic` — is load-bearing for plugin-namespaced invocations: the hardcoded substring `/ship-epic` is **not** present in `/abc:ship-epic <raw-arg>` (the prefix is `/abc:`, not `/`), so the match always failed and every wake duplicate-armed a new cron.
+>
+> **Fallback regex** when `<command-name>` isn't reachable (older Claude Code versions, edge cases): test the entry's command string against `(?:^|[^A-Za-z0-9])(?:[A-Za-z][A-Za-z0-9_-]*:)?ship-epic <raw-arg>(?![A-Za-z0-9_,-])`. The optional `<plugin>:` prefix capture covers any plugin-namespacing scheme; the trailing negative-lookahead is the same boundary class as the strict rule.
+>
+> Boundary check works whether `CronList` reports the wrapped form `/loop 10m <command-name> <raw-arg>` or the inner `<command-name> <raw-arg>`.
+
+#### Arm check
+
 - If a matching entry exists → no-op, proceed to Phase 1 (the common path on loop-triggered wakes).
-- If no match → invoke `Skill(skill: "loop", args: "10m /abc:ship-epic <raw-arg>")` to arm the cron. Then proceed to Phase 1 — the first wake also does the work of the first iteration.
+- If no match → invoke `Skill(skill: "loop", args: "10m <command-name> <raw-arg>")` to arm the cron — substituting the **captured `<command-name>`**, not a hardcoded skill name. This is what makes the next wake's match check succeed against this cron entry. Then proceed to Phase 1 — the first wake also does the work of the first iteration.
 
 10-minute cadence is intentional (longer than the 6-minute worker cadence): the coordinator only needs to react when a worker reaches `merged` (unblocks downstream) or terminal (`failed`/`blocked-user`). Both events surface in Linear within seconds; 10-minute lag is acceptable.
 

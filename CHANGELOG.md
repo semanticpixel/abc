@@ -15,6 +15,12 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-05-22
+
+### Fixed
+
+- **Phase 0.5 self-arm cron-entry match rule** in all four self-arming skills (`ship-issue`, `ship-issue-gh`, `ship-epic`, `ship-epic-gh`). The rule did a substring check for `/<skill-name> <raw-arg>` against `CronList` entries — but when the skill is invoked through the `abc` plugin namespace, the cron command contains `/abc:<skill-name> <raw-arg>` and the hardcoded `/<skill-name>` substring is absent (the prefix is `:`, not `/`). The match always failed, every wake duplicate-armed a new cron, and over hours `CronList` would fill with duplicates pointing at the same args. Now uses the literal `<command-name>` Claude Code injects at invocation time (which surfaces even on `/loop`-triggered wakes), with a permissive regex `(?:[A-Za-z][A-Za-z0-9_-]*:)?<skill-name>` as the fallback. Same fix applied symmetrically across all four skills × SKILL.md + DESIGN.md.
+
 ## [0.7.5] - 2026-05-22
 
 ### Changed
