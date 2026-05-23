@@ -15,6 +15,18 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.7.8] - 2026-05-23
+
+### Added
+
+- **`/abc:review-sweep` Phase 1.5 — PR/MR health pre-pass (attempt auto-rebase).** Runs once per enumerated PR/MR, between Phase 1 (enumerate) and Phase 2 (fetch threads). For PRs/MRs that are behind `main`/`master` and have a resolvable local workdir, the sweep now attempts `git rebase origin/<base>`, runs the project's local gates (`pnpm typecheck && pnpm test` or repo equivalent), and `git push --force-with-lease` if everything is green — posting a `<!-- review-sweep:health:rebased -->` marker on the PR/MR. Escalates with distinct dashboard lines on conflict markers (`needs manual rebase: <files>`), red gates after a clean rebase (`rebased clean but gates failed: <summary>`), or missing local workdir (`no local clone available — rebase manually`). Skips Phase 2+ for any PR/MR that escalates. Most parallel-work conflicts are textual — multiple PRs adding imports to the same file, JSX elements to the same component, lines to the same array — and resolvable by git's three-way merge. The pre-pass tries the mechanical resolution before the dashboard renders.
+
+### Changed
+
+- **`/abc:review-sweep` hard rules** add an explicit allowance for Phase 1.5 to push to source branches under the same self-cheating-hard-stop rule that applies to fix application (no `--no-verify`, no test deletions, no assertion widening — even when the only way to make the rebased branch pass gates is to weaken a check).
+- **`/abc:review-sweep` dashboard (Phase 4)** now renders a `health:` line per PR/MR so successful auto-rebases and escalations are distinguishable at a glance. The summary line totals `auto-rebased` and `health-escalations` alongside the triage classifications.
+- **`/abc:review-sweep` edge-case note** "PR/MR with merge conflicts against main: skip" is replaced by a pointer to Phase 1.5's behavior (auto-rebase attempt; escalate if non-trivial).
+
 ## [0.7.7] - 2026-05-23
 
 ### Changed
