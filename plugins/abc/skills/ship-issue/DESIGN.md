@@ -178,7 +178,7 @@ The skill stops and asks, it doesn't guess, when:
 - Review comment requests scope outside the ticket's acceptance criteria.
 - **Same code-review-bot rule ID / finding-name** appears twice in a row after a fix commit — not the same severity or category, the same *named rule*. If the rule code-review-bot fires is identical after a fix attempt, the fix didn't address the underlying issue and it's likely a design problem the skill can't patch away. (Rule ID is the most precise class definition; severity alone would over-trigger, category alone would under-trigger.)
 - CI fails in a non-test-assertion way (env, secrets, deps).
-- Merge conflict with `main` requires judgment to resolve.
+- Rebase against `main` produces conflict markers, or post-rebase gates fail. Both escalate as `blocked-user` (recoverable), not `failed`. See SKILL.md § Rebase against base — attempt-and-gate.
 - User @-mentions Claude on the PR.
 - Any of the repo-discovery conditions listed under "Platform and repo discovery" (missing/multiple `repo:` labels, unresolvable `<name>`, unknown platform).
 
@@ -232,13 +232,12 @@ Closing the terminal mid-loop is safe: re-running `/ship-issue <same-arg>` picks
   - GitHub: "same check" = identical check-run name from the GitHub Checks API (e.g. `ci / test`, `code-review-bot / review`).
   - GitLab: "same check" = identical pipeline job name (e.g. `build/compile`, `test/unit`).
   The counter is persisted in a Linear comment with a platform-scoped key: `<!-- ship-issue:failcount:github:<check-name>=N -->` or `<!-- ship-issue:failcount:gitlab:<job-name>=N -->`. Platform segment prevents collisions if a sub-task graph spans both platforms. Survives session restarts — otherwise a perpetually flaky check could dodge the hard-stop by the user happening to re-invoke between failures. **Counter resets only when the same check passes.** `fixing → pr-open` transitions do *not* reset the counter — that's the exact loop we're trying to catch. Reaching `merged` / `failed` is terminal, so reset is moot.
-- Rebase after parent PR merge fails and auto-resolution would clearly be wrong.
-- Skill catches itself about to bypass a failing check — e.g., `--no-verify`, deleting assertions to make tests pass, relaxing a type. **Hard-stop, no self-healing.**
+- Skill catches itself about to bypass a failing check — e.g., `--no-verify`, deleting assertions to make tests pass, relaxing a type. **Hard-stop, no self-healing.** Applies *inside* the rebase attempt-and-gate flow too: a clean rebase that only goes green by deleting an assertion is the cheat, not the fix.
 
 ### Soft stops (→ `blocked-user`, loop pauses)
 
 - Scope-creep review comment.
-- Judgment call on conflict resolution.
+- Rebase against `main` produces conflict markers (`blocked-user: rebase-needs-human`), or post-rebase gates fail (`blocked-user: rebase-clean-but-tests-failed`). Mechanical rebase trouble is recoverable — the cron stays armed, the human nudges, the worker continues. See SKILL.md § Rebase against base — attempt-and-gate.
 - Direct user message interrupting the loop → skill reads it and changes course or asks for clarification.
 
 ## What the skill does NOT do
@@ -264,6 +263,7 @@ Don't re-litigate in the implementation ticket without a new round of architect 
 9. **Per-item `repo:` label resolution**: for each item (single ticket, list item, or sub-task), at most one `repo:<name>` label is resolved to a subdirectory of cwd. Zero labels falls back to the cwd git repo (blocked-user only when cwd is not inside a git repo). Multiple labels are blocked. No config file, no auto-inference from title/paths.
 10. **Skill-commit marker is HTML-comment-primary, trailer-fallback.** Commits always write the `<!-- ship-issue:commit -->` HTML marker; the `Co-Authored-By: Claude` trailer is added by default but dropped when any reachable `CLAUDE.md` mentions `Co-Authored-By`. Phase 3's lookup checks the HTML marker first and falls back to the trailer for historical commits made before this scheme landed.
 11. **Cron-entry match via captured `<command-name>` + permissive regex fallback.** Phase 0.5's self-arm check reads the slash-command name Claude Code injects at invocation time (e.g. `/abc:ship-issue`) and uses it verbatim in both the cron arming string and the subsequent match check. A permissive regex (`(?:[A-Za-z][A-Za-z0-9_-]*:)?ship-issue`) is the fallback for environments where `<command-name>` isn't reachable. This fixes a real-world correctness bug where hardcoding `/ship-issue` failed to match plugin-namespaced cron entries and caused every wake to duplicate-arm.
+12. **Rebase against base is attempt-and-gate; mechanical failures escalate to `blocked-user`, not `failed`.** Prior versions had a single hard-stop: any non-trivial rebase failure → `failed: rebase-conflict-needs-human`. That was too brittle for parallel epic runs where most conflicts are textual (parallel workers add imports to the same file, JSX elements to the same component, etc.) and resolvable by git's three-way merge. New rule: attempt `git rebase origin/<base>`, then run the project's local gates, and only escalate on (a) conflict markers (`blocked-user: rebase-needs-human`) or (b) red gates after a clean rebase (`blocked-user: rebase-clean-but-tests-failed`). Semantic shift: `failed` is reserved for self-cheating and hard correctness walls; mechanical rebase trouble is recoverable so the cron stays armed. The self-cheating hard stop still applies *inside* the auto-resolve flow — a clean rebase that only goes green by deleting an assertion is the cheat, not the fix. The legacy `rebase-conflict-needs-human` reason string is removed.
 
 ## Open questions for the implementation ticket
 

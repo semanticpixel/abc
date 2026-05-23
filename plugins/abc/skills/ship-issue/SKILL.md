@@ -356,9 +356,18 @@ Fire **once per wake**, in this order:
 3. If `N + 1 >= 3` for **any** of the failing assertion keys → **override** the Phase 3 state to `failed` with reason `ci-three-strikes:<key>`. Run the `failed` handler (Phase 4 § failed) directly and halt. Do not run any other Phase 4 handler.
 4. Otherwise, hand control to the `fixing` handler and let it run to completion. **After** the `fixing` handler reaches its step 6 (the explicit success signal — the fix commit has pushed cleanly and no `blocked-user`/`failed` transition intervened), append a single new `<!-- ship-issue:failcount:<key>=N+1 -->` comment per currently-failing assertion key. Never increment twice in one wake, even if the `fixing` handler encounters additional failures mid-run. If `fixing` escapes to `blocked-user`/`failed` before reaching step 6, do **not** write any increment.
 
-### Rebase / merge-conflict hard stop
+### Rebase against base — attempt-and-gate
 
-If a rebase against `main`/`master` after a parent-PR merge fails and auto-resolution would clearly be wrong (conflicting semantic changes, not just textual drift) → `failed` with reason `rebase-conflict-needs-human`.
+When the branch is detected as behind `main`/`master` (typically after a parent or sibling PR merges into the base during a parallel epic run), attempt an automatic rebase before escalating.
+
+1. `git fetch origin && git rebase origin/<base>`.
+2. **Conflict markers present** → `git rebase --abort`. Transition to `blocked-user` with reason `rebase-needs-human`. The marker comment lists the conflicted file paths so the human can resolve locally and push.
+3. **Rebase clean (no markers)** → run the project's gates — the same local checks Phase 4's handlers run (`pnpm typecheck && pnpm test` or whatever the repo's `package.json` scripts / CLAUDE.md defines).
+4. **Gates pass** → `git push --force-with-lease`. Post `<!-- ship-issue:rebase:auto -->` as a **marker-only** comment — the marker is the entire comment body, no trailing prose. Matches the convention of the other `<!-- ship-issue:* -->` markers (e.g. `<!-- ship-issue:commit -->`): downstream skills (`/abc:review-sweep` health pre-pass and the CI-repair pre-pass) grep for the marker as a yes/no signal, and free-form prose breaks the match across revisions. The rebase SHA range is already captured in the commit log for forensic reading. If a human-readable timeline note is also wanted, post it as a *separate* PR comment that does NOT contain the marker so the two signals stay decoupled. Re-enter Phase 3 on the next wake.
+5. **Gates fail** → `git rebase --abort`. Transition to `blocked-user` with reason `rebase-clean-but-tests-failed`. The marker comment summarises the failing gate output (top ~20 lines is enough).
+6. The **self-cheating hard stop** below applies verbatim inside this flow. No `--no-verify`, no `.skip()`-ing tests, no `// @ts-expect-error` to silence a failure, no widening types — even when auto-resolving. If the only way to make gates pass is to delete or weaken an assertion, abort and escalate via step 5.
+
+The legacy `failed: rebase-conflict-needs-human` reason is **no longer emitted**. Mechanical rebase failures are recoverable — the cron stays armed, the human nudges, the worker continues — so they belong on the `blocked-user` axis, not `failed`. `failed` is reserved for self-cheating and hard correctness walls (see below and the three-strikes counter above).
 
 ### Self-cheating hard stop (the most important rule in this skill)
 
@@ -371,7 +380,7 @@ Soft stops — the loop pauses, the user resumes:
 - Review comment requests scope outside the ticket's acceptance criteria.
 - Same code-review-bot **rule ID** (finding-name, not severity or category) fires twice in a row after a fix commit. The precise comparison is the named rule — broader comparisons over/under-trigger.
 - CI fails in a non-assertion way (env missing, secrets unavailable, dependency resolution error).
-- Merge conflict with `main` needs judgment to resolve (trivial automatic rebase is OK).
+- Merge conflict with `main` after the attempted auto-rebase (see Phase 5 § Rebase against base — attempt-and-gate). Conflict markers or red gates after a clean rebase both escalate as `blocked-user`, not `failed`.
 - User @-mentions Claude on the PR.
 - Any repo-discovery condition from Phase 1 (missing / multiple / unresolvable `repo:` labels, unknown platform).
 

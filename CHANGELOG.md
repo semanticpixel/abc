@@ -15,6 +15,13 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-05-23
+
+### Changed
+
+- **Rebase against base is now attempt-and-gate, not "trivial only or `failed`"** in both `ship-issue` and `ship-issue-gh`. When the branch is detected as behind `main`/`master`, the worker now runs `git rebase origin/<base>`, then the project's local gates (`pnpm typecheck && pnpm test` or repo equivalent), and only escalates on (a) conflict markers (`blocked-user: rebase-needs-human`) or (b) red gates after a clean rebase (`blocked-user: rebase-clean-but-tests-failed`). The old behavior — fail-fast on anything beyond trivial textual drift — was too brittle for parallel epic runs where most conflicts are textual (parallel workers add imports to the same file, JSX elements to the same component) and resolvable by git's three-way merge. Workers used to halt the whole epic on these; now they self-heal when safe.
+- **Semantic shift: `failed` is reserved for self-cheating and hard correctness walls.** Mechanical rebase trouble is now `blocked-user` (recoverable — cron stays armed, human nudges, worker continues). The legacy `failed: rebase-conflict-needs-human` reason string is removed from both skills. The self-cheating hard stop still applies *inside* the auto-resolve flow — a clean rebase that only goes green by deleting an assertion is the cheat, not the fix. Symmetric updates across `ship-issue/SKILL.md` + `ship-issue-gh/SKILL.md` + both `DESIGN.md` files (Hard stops / Soft stops sections + new locked decision #12).
+
 ## [0.7.6] - 2026-05-22
 
 ### Fixed
