@@ -58,7 +58,8 @@ Scan every open PR/MR you authored across GitHub and GitLab, fetch unresolved re
 - **Never** push to `main`/`master`. Only push to the PR/MR's source branch.
 - **Stop at the first `judgment-required`** when applying fixes to a given PR/MR — don't blast through a thread of mixed-judgment items.
 - Skip drafts unless the user passes `--include-drafts`.
-- **Phase 1.5 may push to source branches** as part of the auto-rebase health pre-pass — under the same self-cheating-hard-stop rule that applies to fix application (see Phase 1.5 and Phase 5). No `--no-verify`, no test deletions, no assertion widening, even when the only way to make the rebased branch pass gates is to weaken a check.
+- **Phase 1.5 may push to source branches** as part of the auto-rebase health pre-pass and the CI-repair pre-pass — under the same self-cheating-hard-stop rule that applies to fix application (see Phase 1.5 and Phase 5). No `--no-verify`, no test deletions, no assertion widening, even when the only way to make the rebased branch pass gates is to weaken a check.
+- **Phase 1.5 CI repair is production-code-only by construction.** The test-path guardrail (paths matching `**/*.test.*`, `**/*.spec.*`, `**/__tests__/**`, `**/test/**`, `**/tests/**`) rejects any proposed fix that would touch a test file and escalates to the user. Test-edit requirements are never auto-applied — even when the test is the one that needs updating, the legitimate-test-update case goes to user judgment via the dashboard, not silent commit.
 
 ## Workflow
 
@@ -114,7 +115,35 @@ Per PR/MR, in parallel where possible:
 
 In Phase 1.5 specifically: if the only way to make gates pass after a clean rebase is to delete or weaken an assertion, abort the rebase (step 7's `--abort` path) and surface as `rebased clean but gates failed` — never push a "fixed" rebase that's actually a cheat.
 
-The dashboard (Phase 4) renders health-pre-pass outcomes on their own lines so successful auto-rebases (`✓ rebased`, marker posted) and rebase-escalations (`needs manual rebase`, `gates failed`, `no local clone`) are distinguishable at a glance.
+#### Phase 1.5b: CI repair (production-code-only, one attempt)
+
+For PRs/MRs that came out of the rebase pre-pass **health-OK** (either no rebase needed, or successful auto-rebase) but have **failing CI checks**, attempt a one-shot production-code-only repair before the dashboard renders. Same engineering pattern as the rebase pre-pass: attempt the mechanical resolution, run the project's gates, escalate (don't auto-merge a cheat) if anything goes off-spec.
+
+1. **Fetch failing checks for the PR's head SHA.**
+   - GitHub: `gh api /repos/<o>/<r>/commits/<sha>/check-runs --paginate` (filter `conclusion=failure`) plus `gh api /repos/<o>/<r>/commits/<sha>/status` for the legacy status API.
+   - GitLab: use the existing MCP tools to read pipeline job status for the MR's head commit.
+   - If there are no failing checks → mark health-OK, continue to Phase 2.
+2. **Classify each failing check** using the same language as `ship-issue/SKILL.md` § Phase 3 rows 3a/3b:
+   - **`assertion-style`** — unit test, lint, type check, build, code-review-bot check-run with findings. Mechanical; a code fix in production code is plausible.
+   - **`non-assertion`** — secrets missing, dependency-resolution failure, runner/env error, infrastructure outage, "no test output at all". Not mechanical; the fix is outside the diff.
+3. **Any non-assertion failure** → surface in the dashboard as **`CI red (non-assertion): <check-name>`**. Skip Phase 2+ for this PR/MR. Do not attempt repair — the fix is outside what the skill can do.
+4. **Assertion failures only — one attempt** (no 3-strikes loop; `review-sweep` is one-shot per sweep):
+   - Read failure log via `gh api /repos/<o>/<r>/check-runs/<id>/logs` (or `gh run view <run-id> --log-failed`).
+   - Diagnose the failure and generate a proposed patch.
+   - **Test-path guardrail (load-bearing):** the proposed patch must not modify any file under the project's test paths. Heuristic globs: `**/*.test.*`, `**/*.spec.*`, `**/__tests__/**`, `**/test/**`, `**/tests/**`. If the patch touches a test file → reject the patch entirely. Surface in the dashboard as **`CI red: proposed fix would modify test file (production-only auto-fix); needs your judgment`**. Skip Phase 2+ for this PR/MR.
+   - **Self-cheating hard stop applies** — no `--no-verify`, no `eslint-disable`, no `// @ts-expect-error` to silence the failure, no widening types, no `.skip()`-ing tests. The verbatim hard stop above governs this step too. If the only mechanical fix is to weaken an assertion, treat the patch as rejected and surface as `CI repair attempted but produced a cheat`.
+   - Apply the patch in the local workdir.
+   - Run the repo's local gates (`pnpm typecheck && pnpm test` or the equivalent from `package.json` scripts / CLAUDE.md).
+5. **Gates pass** → commit with the standard skill-commit marker so any future `/abc:ship-issue[-gh]` wake on this PR finds the commit correctly:
+   - Commit body includes `<!-- ship-issue:commit -->` (no `Co-Authored-By` trailer when a reachable `CLAUDE.md` forbids it; see the ship-issue skills for the detection rule).
+   - `git push --force-with-lease`.
+   - Post `<!-- review-sweep:health:ci-fixed -->` as a **marker-only** comment on the PR/MR — the marker is the entire comment body, no trailing prose. Matches the convention of `<!-- review-sweep:health:rebased -->` and the `<!-- ship-issue:* -->` family: downstream skills grep markers as yes/no signals, and free-form prose breaks the match across revisions. The fix-commit SHA is already in `git log`. If a human-readable timeline note is wanted, post it as a *separate* PR/MR comment that does NOT contain the marker.
+   - Mark health-OK. Continue to Phase 2.
+6. **Gates fail** → `git restore .` to revert the local patch (leaves the PR's pushed tip untouched). Surface in the dashboard as **`CI repair attempted but gates failed: <top-20-lines-of-output>`**. Skip Phase 2+ for this PR/MR.
+
+**Hard rule (also listed under Phase 0 hard rules):** Phase 1.5b is production-code-only by construction. Any failure that diagnoses to "the test needs updating" escalates to the user — `review-sweep` never silently rewrites a test to make CI green. The legitimate-test-update case (the PR intentionally changed the contract a test was asserting) is captured by the dashboard's `proposed fix would modify test file` line and routed to user judgment, not auto-applied.
+
+The dashboard (Phase 4) renders health-pre-pass outcomes on their own lines so successful auto-rebases (`✓ rebased`, marker posted), successful CI repairs (`✓ ci-fixed`, marker posted), and health-escalations (`needs manual rebase`, `rebased clean but gates failed`, `no local clone`, `CI red (non-assertion)`, `proposed fix would modify test file`, `CI repair attempted but gates failed`) are distinguishable at a glance.
 
 ### Phase 2: Per-PR/MR, fetch unresolved threads
 
@@ -176,7 +205,24 @@ After all triage subagents return, print a per-PR/MR dashboard. Phase 1.5 health
     health: ⚠ no local clone available — rebase manually
     (skipped triage)
 
-Summary: 2 fixable-code, 1 fixable-doc, 1 judgment-required, 1 question · 1 auto-rebased · 3 health-escalations
+[6] acme/web#4533  "Rename Avatar prop `size` → `dimension`"
+    health: ✓ ci-fixed (auto-patched src/Avatar.tsx consumer; gates green; marker posted)
+    └─ src/Avatar.tsx:18  [fixable-code, medium]
+       "Default prop value should come from theme tokens"
+
+[7] acme/web#4534  "Refactor parseConfig to accept stream"
+    health: ⚠ CI red: proposed fix would modify test file (production-only auto-fix); needs your judgment
+    (skipped triage)
+
+[8] acme/web#4535  "Add CSV export endpoint"
+    health: ⚠ CI red (non-assertion): build / install-deps
+    (skipped triage)
+
+[9] acme/web#4536  "Wire shipping label printer"
+    health: ⚠ CI repair attempted but gates failed: 3 new type-errors after fix
+    (skipped triage)
+
+Summary: 2 fixable-code, 1 fixable-doc, 1 judgment-required, 1 question · 1 auto-rebased · 1 auto-ci-fixed · 6 health-escalations
 ```
 
 Then ask via `AskUserQuestion`:
@@ -239,6 +285,6 @@ Return. The skill is one-shot — do NOT self-arm `/loop`. If the user wants per
 
 - **PR/MR with merge conflicts against main**: handled by Phase 1.5's auto-rebase health pre-pass. Trivial textual conflicts auto-resolve and get a `<!-- review-sweep:health:rebased -->` marker; non-trivial conflicts surface in the dashboard as `needs manual rebase: <files>` and skip Phase 2+ for that PR/MR.
 - **Local repo not present for the PR/MR**: Phase 1.5 surfaces as `no local clone available — rebase manually` and skips Phase 2+ for that PR/MR. No interactive prompt — the dashboard line is the entire signal.
-- **CI is red on the PR/MR**: still triage and apply fixes; the user might be fixing exactly the thing CI is failing on.
+- **CI is red on the PR/MR**: handled by Phase 1.5b's CI-repair pre-pass. Assertion-style failures (typecheck / test / lint / build) get one attempt at a production-code-only auto-fix, with a hard test-path guardrail that escalates any test-edit requirement to the user. Non-assertion failures (env / secrets / deps / infra) escalate immediately as `CI red (non-assertion)` and never get an auto-fix attempt. Test-edit-requiring fixes surface as `proposed fix would modify test file (production-only auto-fix); needs your judgment`. Successful auto-fixes get a `<!-- review-sweep:health:ci-fixed -->` marker on the PR/MR.
 - **Same triage rule fires repeatedly across PRs**: still apply per-PR; don't try to deduplicate "the same fix" — it's per-PR per-branch.
 - **code-review-bot findings with named rules**: classify as `fixable-code` if the rule has a mechanical fix, `judgment-required` if it's a design lint (architectural pattern violations).
