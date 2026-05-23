@@ -106,7 +106,7 @@ Per PR/MR, in parallel where possible:
 5. **Conflict markers remain** → `git rebase --abort`. Surface in the dashboard as **`needs manual rebase: <conflicted-file-paths>`**. Skip Phase 2+ for this PR/MR.
 6. **Clean rebase (no markers)** → run the repo's local gates — the same `pnpm typecheck && pnpm test` / `package.json` script invocation that Phase 5 uses post-fix.
 7. **Gates fail after clean rebase** → `git rebase --abort` (back to the pre-rebase tip). Surface in the dashboard as **`rebased clean but gates failed: <top-20-lines-of-output>`**. Skip Phase 2+ for this PR/MR.
-8. **Gates pass** → `git push --force-with-lease`. Post a `<!-- review-sweep:health:rebased -->` marker comment on the PR/MR with a one-line note (e.g. *"Rebased on top of `origin/<base>`; gates green; resuming sweep."*). Mark health-OK. Continue to Phase 2.
+8. **Gates pass** → `git push --force-with-lease`. Post `<!-- review-sweep:health:rebased -->` as a **marker-only** comment on the PR/MR — the marker is the entire comment body, no trailing prose. Matches the convention of the other `<!-- ship-issue:* -->` / `<!-- review-sweep:* -->` markers (e.g. `<!-- ship-issue:commit -->`, `<!-- ship-issue:rebase:auto -->`): downstream skills grep for the marker as a yes/no signal, and free-form prose breaks the match across revisions. The rebase SHA range is already captured in the commit log for forensic reading. If a human-readable timeline note is also wanted, post it as a *separate* PR/MR comment that does NOT contain the marker so the two signals stay decoupled. Mark health-OK. Continue to Phase 2.
 
 **Self-cheating hard stop (verbatim, applies inside Phase 1.5 too):**
 
@@ -238,7 +238,7 @@ Return. The skill is one-shot — do NOT self-arm `/loop`. If the user wants per
 ## Notes on edge cases
 
 - **PR/MR with merge conflicts against main**: handled by Phase 1.5's auto-rebase health pre-pass. Trivial textual conflicts auto-resolve and get a `<!-- review-sweep:health:rebased -->` marker; non-trivial conflicts surface in the dashboard as `needs manual rebase: <files>` and skip Phase 2+ for that PR/MR.
-- **Local repo not present for the PR/MR**: prompt for the path, or skip with a note in the dashboard.
+- **Local repo not present for the PR/MR**: Phase 1.5 surfaces as `no local clone available — rebase manually` and skips Phase 2+ for that PR/MR. No interactive prompt — the dashboard line is the entire signal.
 - **CI is red on the PR/MR**: still triage and apply fixes; the user might be fixing exactly the thing CI is failing on.
 - **Same triage rule fires repeatedly across PRs**: still apply per-PR; don't try to deduplicate "the same fix" — it's per-PR per-branch.
 - **code-review-bot findings with named rules**: classify as `fixable-code` if the rule has a mechanical fix, `judgment-required` if it's a design lint (architectural pattern violations).
