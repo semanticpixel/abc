@@ -15,6 +15,18 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.7.9] - 2026-05-23
+
+### Added
+
+- **`/abc:review-sweep` Phase 1.5b — CI repair (production-code-only, one attempt).** Extends Phase 1.5 with a CI-repair step that runs **after** the rebase pre-pass (from 0.7.8) for PRs/MRs that came out health-OK. Fetches failing checks via the GitHub Checks/Status APIs (GitLab equivalent via MCP), classifies each as `assertion-style` (typecheck / test / lint / build) or `non-assertion` (env / secrets / deps / infra). Non-assertion failures escalate immediately. Assertion failures get **one** attempt at an auto-fix — bounded by a **test-path guardrail** (heuristic globs `**/*.test.*`, `**/*.spec.*`, `**/__tests__/**`, `**/test/**`, `**/tests/**`) that rejects any proposed fix touching a test file and escalates as `proposed fix would modify test file (production-only auto-fix); needs your judgment`. Successful fixes commit with the standard `<!-- ship-issue:commit -->` marker (so any future `/abc:ship-issue[-gh]` wake on this PR finds the commit correctly), `git push --force-with-lease`, post a marker-only `<!-- review-sweep:health:ci-fixed -->` comment, and continue to Phase 2. Failed gates after the patch → `git restore .` to revert, surface as `CI repair attempted but gates failed`. Self-cheating hard stop applies inside this flow.
+
+### Changed
+
+- **`/abc:review-sweep` hard rules** updated to mention CI repair in the push-allowance bullet (alongside the rebase pre-pass from 0.7.8) and add a new bullet codifying the production-code-only guarantee: CI repair never silently rewrites a test even when the test is the file that needs updating; the legitimate-test-update case goes to user judgment via the dashboard.
+- **`/abc:review-sweep` dashboard (Phase 4)** gets three new escalation lines (`CI red (non-assertion)`, `proposed fix would modify test file`, `CI repair attempted but gates failed`) and a `ci-fixed` success line; the summary totals now include `auto-ci-fixed` alongside `auto-rebased` and `health-escalations`.
+- **`/abc:review-sweep` edge-case note** *"CI is red on the PR/MR: still triage and apply fixes"* is replaced by a pointer to Phase 1.5b's behavior.
+
 ## [0.7.8] - 2026-05-23
 
 ### Added
