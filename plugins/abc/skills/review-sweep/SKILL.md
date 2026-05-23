@@ -58,6 +58,7 @@ Scan every open PR/MR you authored across GitHub and GitLab, fetch unresolved re
 - **Never** push to `main`/`master`. Only push to the PR/MR's source branch.
 - **Stop at the first `judgment-required`** when applying fixes to a given PR/MR — don't blast through a thread of mixed-judgment items.
 - Skip drafts unless the user passes `--include-drafts`.
+- **Phase 1.5 may push to source branches** as part of the auto-rebase health pre-pass — under the same self-cheating-hard-stop rule that applies to fix application (see Phase 1.5 and Phase 5). No `--no-verify`, no test deletions, no assertion widening, even when the only way to make the rebased branch pass gates is to weaken a check.
 
 ## Workflow
 
@@ -90,6 +91,31 @@ Filter out drafts unless `--include-drafts` was passed. Drop any PR/MR with no r
 
 If the resulting list is empty: print "No open PRs/MRs with reviewer activity. Inbox zero." and return.
 
+### Phase 1.5: PR/MR health pre-pass — attempt auto-rebase
+
+Runs once per enumerated PR/MR, **before** triage. The goal: a PR that's behind `main`/`master` but otherwise mergeable shouldn't appear in the dashboard as "stalled" — most parallel-work conflicts are textual (multiple PRs adding imports to the same file, JSX elements to the same component, lines to the same array) and resolvable by git's three-way merge. Phase 1.5 tries the mechanical resolution before the dashboard renders.
+
+Per PR/MR, in parallel where possible:
+
+1. **Mergeable check.**
+   - GitHub: `gh api /repos/<owner>/<repo>/pulls/<num>` and read the `mergeable` field. (GitHub computes this asynchronously; a `null` value means "still computing" — treat as `true` for this pass so we don't block on stale state. A subsequent sweep will catch it.)
+   - GitLab: `mcp__gitlab__get_merge_request` and read the equivalent field.
+2. **`mergeable: true`** → mark health-OK. Continue to Phase 2 as today.
+3. **`mergeable: false`** → resolve the local workdir via the same `repo:` label + cwd lookup Phase 5 already uses (head-branch repo → matching subdirectory of cwd, or known-mapping fallback). If no local workdir is resolvable → surface in the dashboard as **`no local clone available — rebase manually`**. Skip Phase 2+ for this PR/MR.
+4. **Local workdir resolved** → `gh pr checkout <num>` (or `glab mr checkout <iid>`). `git fetch origin`. `git rebase origin/<base>`.
+5. **Conflict markers remain** → `git rebase --abort`. Surface in the dashboard as **`needs manual rebase: <conflicted-file-paths>`**. Skip Phase 2+ for this PR/MR.
+6. **Clean rebase (no markers)** → run the repo's local gates — the same `pnpm typecheck && pnpm test` / `package.json` script invocation that Phase 5 uses post-fix.
+7. **Gates fail after clean rebase** → `git rebase --abort` (back to the pre-rebase tip). Surface in the dashboard as **`rebased clean but gates failed: <top-20-lines-of-output>`**. Skip Phase 2+ for this PR/MR.
+8. **Gates pass** → `git push --force-with-lease`. Post `<!-- review-sweep:health:rebased -->` as a **marker-only** comment on the PR/MR — the marker is the entire comment body, no trailing prose. Matches the convention of the other `<!-- ship-issue:* -->` / `<!-- review-sweep:* -->` markers (e.g. `<!-- ship-issue:commit -->`, `<!-- ship-issue:rebase:auto -->`): downstream skills grep for the marker as a yes/no signal, and free-form prose breaks the match across revisions. The rebase SHA range is already captured in the commit log for forensic reading. If a human-readable timeline note is also wanted, post it as a *separate* PR/MR comment that does NOT contain the marker so the two signals stay decoupled. Mark health-OK. Continue to Phase 2.
+
+**Self-cheating hard stop (verbatim, applies inside Phase 1.5 too):**
+
+> If the skill catches itself about to bypass a failing check rather than fix it — deleting a failing assertion so tests pass, adding `--no-verify` to a commit, widening a type to suppress an error, wrapping a failing line in `// @ts-expect-error`, `.skip()`-ing a test that was failing, commenting out a lint rule that was firing, `eslint-disable`-ing a violation to silence it — **hard stop**. No self-healing, no "I'll come back and fix it properly," no silent retry. Surface the attempted-cheat in the dashboard so the user can see exactly what the skill was about to do.
+
+In Phase 1.5 specifically: if the only way to make gates pass after a clean rebase is to delete or weaken an assertion, abort the rebase (step 7's `--abort` path) and surface as `rebased clean but gates failed` — never push a "fixed" rebase that's actually a cheat.
+
+The dashboard (Phase 4) renders health-pre-pass outcomes on their own lines so successful auto-rebases (`✓ rebased`, marker posted) and rebase-escalations (`needs manual rebase`, `gates failed`, `no local clone`) are distinguishable at a glance.
+
 ### Phase 2: Per-PR/MR, fetch unresolved threads
 
 For each PR/MR (in parallel where possible — `gh api` calls are cheap, GitLab MCP calls can run concurrently per project):
@@ -118,12 +144,13 @@ Each subagent returns the structured YAML (see `triage` agent contract). Collect
 
 ### Phase 4: Aggregate and present the dashboard
 
-After all triage subagents return, print a per-PR/MR dashboard:
+After all triage subagents return, print a per-PR/MR dashboard. Phase 1.5 health-pre-pass outcomes are rendered as a `health:` line per PR/MR so successful auto-rebases and escalations are distinguishable at a glance:
 
 ```
 /abc:review-sweep — <N> PRs/MRs, <M> unresolved threads
 
 [1] acme/web#4521  "Add WidgetRow to dashboard"
+    health: ✓ rebased on origin/main (gates green; marker posted)
     └─ src/WidgetRow.tsx:42  [fixable-code, high]
        "Use `useMemo` for the derived rows array"
        → const rows = useMemo(() => derive(input), [input]);
@@ -133,10 +160,23 @@ After all triage subagents return, print a per-PR/MR dashboard:
        "Should this handle the empty state differently?"
 
 [2] eng/super-funnel!231  "Auto-approve threshold tuning"
+    health: ✓ mergeable (no rebase needed)
     └─ rules/single_dir.yaml:14  [question, high]
        "Why 0.6 not 0.7?"
 
-Summary: 2 fixable-code, 1 fixable-doc, 1 judgment-required, 1 question
+[3] acme/web#4530  "Sidebar navigation refactor"
+    health: ⚠ needs manual rebase: src/Sidebar.tsx, src/routes.ts
+    (skipped triage)
+
+[4] acme/web#4531  "Update form validation"
+    health: ⚠ rebased clean but gates failed: 2 type-errors in src/forms/Field.tsx
+    (skipped triage)
+
+[5] acme/other#9  "Hot-fix typo in helper"
+    health: ⚠ no local clone available — rebase manually
+    (skipped triage)
+
+Summary: 2 fixable-code, 1 fixable-doc, 1 judgment-required, 1 question · 1 auto-rebased · 3 health-escalations
 ```
 
 Then ask via `AskUserQuestion`:
@@ -197,8 +237,8 @@ Return. The skill is one-shot — do NOT self-arm `/loop`. If the user wants per
 
 ## Notes on edge cases
 
-- **PR/MR with merge conflicts against main**: skip; surface in the summary. Don't try to rebase.
-- **Local repo not present for the PR/MR**: prompt for the path, or skip with a note in the dashboard.
+- **PR/MR with merge conflicts against main**: handled by Phase 1.5's auto-rebase health pre-pass. Trivial textual conflicts auto-resolve and get a `<!-- review-sweep:health:rebased -->` marker; non-trivial conflicts surface in the dashboard as `needs manual rebase: <files>` and skip Phase 2+ for that PR/MR.
+- **Local repo not present for the PR/MR**: Phase 1.5 surfaces as `no local clone available — rebase manually` and skips Phase 2+ for that PR/MR. No interactive prompt — the dashboard line is the entire signal.
 - **CI is red on the PR/MR**: still triage and apply fixes; the user might be fixing exactly the thing CI is failing on.
 - **Same triage rule fires repeatedly across PRs**: still apply per-PR; don't try to deduplicate "the same fix" — it's per-PR per-branch.
 - **code-review-bot findings with named rules**: classify as `fixable-code` if the rule has a mechanical fix, `judgment-required` if it's a design lint (architectural pattern violations).
