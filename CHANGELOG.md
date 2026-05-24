@@ -15,6 +15,12 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.7.11] - 2026-05-23
+
+### Added
+
+- **`ship-issue-gh/DESIGN.md` — new "Known design tensions" section** capturing the `Closes`-trailer / `blocked-verify`-handler race observed during `/abc:ship-issue-gh semanticpixel/theluistorres#21` (PR #33, May 2026). On a PR carrying both a `Closes <owner>/<repo>#<n>` trailer and a linked issue with a `## Validation` heading, GitHub's auto-close fires on merge *before* the worker's next wake — so by the time Phase 3 row 1a derives `blocked-verify` and posts the validation steps, the issue is already closed and any dashboard treats it as Done. The validation gate runs as a post-mortem instead of a gating signal. Recommended manual workaround: omit the `Closes` trailer on cutover-style PRs whose linked issue has a `## Validation` heading; let the worker call `gh issue close --reason completed` itself in the `merged` handler after observing `<!-- ship-issue:verify:passed -->`. A new "Open questions" entry tracks the skill-level fix (auto-omit on heading detection) as a candidate next step, deferred unless the manual workaround proves error-prone.
+
 ## [0.7.10] - 2026-05-23
 
 ### Added
