@@ -1,0 +1,122 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Detect version change
+        id: detect
+        run: |
+          set -euo pipefail
+          PLUGIN_JSON="plugins/abc/.claude-plugin/plugin.json"
+          NEW_VERSION=$(jq -r .version "$PLUGIN_JSON")
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE_REF="origin/${{ github.base_ref }}"
+          else
+            BEFORE="${{ github.event.before }}"
+            if [[ "$BEFORE" == "0000000000000000000000000000000000000000" ]]; then
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "Initial push on this branch; no comparison base. Skipping."
+              exit 0
+            fi
+            BASE_REF="$BEFORE"
+          fi
+
+          OLD_VERSION=$(git show "$BASE_REF:$PLUGIN_JSON" 2>/dev/null | jq -r .version 2>/dev/null || echo "")
+          echo "new=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "old=$OLD_VERSION" >> "$GITHUB_OUTPUT"
+
+          if [[ -z "$OLD_VERSION" || "$NEW_VERSION" == "$OLD_VERSION" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Version unchanged ($OLD_VERSION -> $NEW_VERSION); nothing to do."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Version bumped: $OLD_VERSION -> $NEW_VERSION"
+          fi
+
+      - name: Extract CHANGELOG section
+        if: steps.detect.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.detect.outputs.new }}"
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { capture = 1; next }
+            capture && /^## \[/ { exit }
+            capture { print }
+          ' CHANGELOG.md > /tmp/release-notes.md
+          if [[ ! -s /tmp/release-notes.md ]]; then
+            echo "::error::CHANGELOG.md has no section for [$VERSION] — bump the version and add the changelog entry in the same commit."
+            exit 1
+          fi
+          echo "--- release notes for v$VERSION ---"
+          cat /tmp/release-notes.md
+          echo "--- end ---"
+
+      - name: Determine --latest flag
+        if: steps.detect.outputs.changed == 'true'
+        id: latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          NEW="${{ steps.detect.outputs.new }}"
+          HIGHEST=$(gh release list --limit 200 --json tagName --jq '.[].tagName' \
+            | sed 's/^v//' \
+            | sort -V \
+            | tail -1)
+          if [[ -z "$HIGHEST" ]]; then
+            echo "flag=--latest" >> "$GITHUB_OUTPUT"
+            echo "No existing releases — marking as --latest."
+          else
+            TOP=$(printf '%s\n%s\n' "$HIGHEST" "$NEW" | sort -V | tail -1)
+            if [[ "$TOP" == "$NEW" && "$NEW" != "$HIGHEST" ]]; then
+              echo "flag=--latest" >> "$GITHUB_OUTPUT"
+              echo "$NEW > $HIGHEST — marking as --latest."
+            else
+              echo "flag=--latest=false" >> "$GITHUB_OUTPUT"
+              echo "$NEW <= $HIGHEST — NOT marking as --latest (likely a backport)."
+            fi
+          fi
+
+      - name: Create tag and release
+        if: steps.detect.outputs.changed == 'true' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.detect.outputs.new }}"
+          TAG="v$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file /tmp/release-notes.md \
+            ${{ steps.latest.outputs.flag }}
+
+      - name: Dry-run summary (pull_request)
+        if: steps.detect.outputs.changed == 'true' && github.event_name == 'pull_request'
+        run: |
+          echo "=== DRY RUN (pull_request) ==="
+          echo "Would create tag:    v${{ steps.detect.outputs.new }}"
+          echo "Latest flag:         ${{ steps.latest.outputs.flag }}"
+          echo "Release notes preview is shown in the 'Extract CHANGELOG section' step above."
+
+      - name: No-op summary
+        if: steps.detect.outputs.changed == 'false'
+        run: echo "Version unchanged — no tag or release created."
