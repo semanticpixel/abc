@@ -15,6 +15,12 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.7.10] - 2026-05-23
+
+### Added
+
+- **`.github/workflows/release.yml` — automated tag-and-release on version bump.** Triggers on push to `main` and detects whether `plugins/abc/.claude-plugin/plugin.json`'s `version` changed against the previous commit (`github.event.before`). When bumped, extracts the matching `## [<version>] - <date>` section from `CHANGELOG.md` verbatim, creates the matching `v<version>` annotated tag at the merge SHA, and calls `gh release create` with the extracted notes. `--latest` is set only when the new version is strictly higher than every existing release tag (semver-sorted via `sort -V`) so a hypothetical 0.6.x backport landing after 0.7.x can't steal the Latest pin. `pull_request` triggers run the same detection in dry-run mode, logging the would-create tag and the rendered notes to the Checks tab without writing anything — gives every release PR a smoke test before merge. A `workflow_dispatch` trigger lets a human re-run the release detection on demand (compares HEAD against its parent); tag and release creation are guarded by existence checks so re-runs on the same commit are idempotent — useful when a tag fails to publish on the first try due to a transient `gh` outage. Permissions scoped to `contents: write` only.
+
 ## [0.7.9] - 2026-05-23
 
 ### Added
