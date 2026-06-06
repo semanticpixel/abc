@@ -15,6 +15,17 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-06
+
+### Added
+
+- **`/abc:review-epic` — new skill** (MINOR): Linear sibling of `/abc:review-epic-gh`, completing the review-epic pair. Same review-only contract — self-arming `/loop 12m`, ≤30KB epic-context bootstrap with the dedup-against-parent rule, `abc:reviewer` subagent with cross-cutting context, one-time `AskUserQuestion` post gate, structured summary (inline index / spec cross-reference by sub-issue ID / forward-looking flags), compact-between-reviews boundary, termination within one tick of the parent reaching Done. The delta is plumbing: parent + sub-issues resolved via Linear MCP (`get_issue` / `list_issues` with `parentId` — native sub-issues replace the `-gh` task-list fence), per-child platform routing via the `repo:` label → workdir → `git remote` convention from `ship-issue` Phase 1 (GitHub PRs via `gh`, GitLab MRs via `glab`, including the positioned-discussion posting path for GitLab inline comments), and branch resolution from Linear's `gitBranchName`. Children that fail repo routing are skipped-with-a-line, not loop-halting — review-only skills degrade by narrowing coverage. No Linear write tools granted: markers live on the PR/MR, never the Linear issue.
+- **`review-epic/linear-conventions.md`** — the Linear↔GitHub data-model mapping table (fence → `parentId`, labels → native relations, derived branch → `gitBranchName`) plus the marker-placement rule that makes the `<!-- review-epic:reviewed-at:<sha> -->` dedup namespace shared and platform-agnostic across both review-epic variants.
+
+### Changed
+
+- **README skills table** gains the `/abc:review-epic` row; CLAUDE.md repo layout updated.
+
 ## [0.8.0] - 2026-06-06
 
 ### Added
