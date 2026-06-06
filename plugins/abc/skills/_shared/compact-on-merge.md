@@ -5,10 +5,10 @@ conversation compaction at the natural terminal boundary of a shipped sub-issue,
 long-running shipping loops stay under context budget without ad-hoc user-driven
 `/compact` interruptions.
 
-**Consumed by:** `ship-issue`, `ship-issue-gh`, `ship-epic`, `ship-epic-gh` (and the
-planned `review-epic` / `review-epic-gh` skills). Each consumer's SKILL.md references
-this file at its trigger point rather than duplicating the rules — edit the convention
-here, in one place.
+**Consumed by:** `ship-issue`, `ship-issue-gh`, `ship-epic`, `ship-epic-gh`, and
+`review-epic-gh` (plus the planned `review-epic` Linear sibling). Each consumer's
+SKILL.md references this file at its trigger point rather than duplicating the rules —
+edit the convention here, in one place.
 
 ---
 
@@ -41,9 +41,16 @@ this wake's status comment establishes the snapshot and no prompt is printed. Sa
 last-item rule as workers: when the wake is terminal (all merged → epic closing), skip —
 the loop is ending anyway.
 
+**Reviewers** (`review-epic-gh`, planned `review-epic`): at the **"between two PR
+reviews"** boundary — after a review pass completes (the `<!-- review-epic:reviewed-at -->`
+dedup marker is posted) and one or more un-reviewed targets remain in the tick's queue.
+Same end-the-wake rule as workers: print the prompt, end the tick; the dedup markers
+persist on the PRs, so the next tick resumes with exactly the remaining targets. Skip
+when the just-reviewed PR was the only/last target.
+
 **At most once per wake.** Two children merging in the same coordinator wake still
-produce exactly one compaction prompt. (Workers are once-per-wake by construction — the
-prompt ends the wake.)
+produce exactly one compaction prompt. (Workers and reviewers are once-per-wake by
+construction — the prompt ends the wake.)
 
 ## What persists (why compacting here is safe)
 
@@ -96,6 +103,12 @@ Coordinators, at end-of-wake:
 
 ```
 🗜 <n> child(ren) merged this wake. Run /compact now to free context before the next coordinator wake.
+```
+
+Reviewers, between two PR reviews:
+
+```
+🗜 Review of <pr-url> posted. Run /compact now to free context before reviewing <next-pr-url>.
 ```
 
 `<ref>` / `<next-ref>` are the tracker IDs (`PROJ-66`, `<owner>/<repo>#43`). Print the

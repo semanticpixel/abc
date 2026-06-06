@@ -15,6 +15,18 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-06
+
+### Added
+
+- **`/abc:review-epic-gh` — new skill** (MINOR): review-only counterpart to `/abc:ship-epic-gh` and the second session of the two-session epic-shipping pattern validated during the carn v0.1.0 delivery. Self-arming `/loop 12m` against a GitHub parent issue with a managed `## Sub-issues` task-list. Per tick: bootstraps ≤30KB of epic context (parent body verbatim, per-child acceptance criteria + dependency labels, merged-sibling diffstats + prior summary comments, pending children's criteria with a documented trim order), enumerates open child PRs not yet reviewed at their current HEAD SHA via `<!-- review-epic:reviewed-at:<sha> -->` marker-only comments (unchanged PRs cost exactly one dedup check), spawns the existing `abc:reviewer` subagent with the cross-cutting context appended to its prompt (agents/reviewer.md untouched), and posts one review per PR: inline comments plus a summary structured as (a) inline index, (b) spec cross-reference citing acceptance bullets by sub-issue ID, (c) forward-looking flags naming the pending child. Terminates within one tick of the parent closing (summary + `CronDelete`). Hard rules: never merges/pushes/closes/labels; never edits the parent fence; anti-pattern callout against running it in the same session as the shipping skills.
+- **`review-epic-gh/github-conventions.md`** — thin re-export pointing at the canonical `scaffold-sub-issues-gh/github-conventions.md`, plus the one marker namespace this skill owns.
+
+### Changed
+
+- **`_shared/compact-on-merge.md`** gains the third consumer class: **reviewers**, at the "between two PR reviews" boundary — prompt then end the tick when un-reviewed targets remain (dedup markers persist, next tick resumes exactly there), with the reviewer-variant prompt format. Consumers list updated; `review-epic` (Linear) remains the planned sibling.
+- **README skills table** gains the `/abc:review-epic-gh` row; CLAUDE.md repo layout updated.
+
 ## [0.7.12] - 2026-06-05
 
 ### Added
