@@ -24,8 +24,8 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ### Changed
 
-- **`ship-issue` / `ship-issue-gh` `merged` handlers** gain a compact-on-merge step (after the terminal comment, before advancing): print the compaction prompt as the last output of the wake, only when a non-terminal item remains, at most once per wake.
-- **`ship-epic` / `ship-epic-gh` Phase 4** gains a "Compact-on-merge (end of wake)" step: print the coordinator-variant prompt after the terminal block when ≥1 child newly merged this wake, skipped on no-op and terminal wakes.
+- **`ship-issue` / `ship-issue-gh` `merged` handlers** gain a compact-on-merge step (after the terminal comment): print the compaction prompt as the last output of the wake when a non-terminal item remains, then **end the wake** — the next `/loop` wake picks up `<next-ref>` fresh post-compaction. Same-wake continuation would surface the prompt only after the next item's work accumulated, too late to free anything.
+- **`ship-epic` / `ship-epic-gh` Phase 4** gains a "Compact-on-merge (end of wake)" step: print the coordinator-variant prompt after the terminal block when ≥1 child newly merged this wake (vs. the prior `<!-- ship-epic:status -->` snapshot), with a **first-wake baseline guard** — no prior snapshot ⇒ the current merged set is the baseline, no prompt (prevents spurious prompts when resuming an epic with already-merged children). Skipped on no-op and terminal wakes.
 - **README skills table** rows for the four `ship-*` skills show the `[--no-compact]` flag, plus a note under the table pointing at the shared helper.
 
 ## [0.7.11] - 2026-05-23

@@ -309,8 +309,8 @@ Entered from Phase 3 row 3 (new review comments) or row 3a (failing assertion CI
 Reaching this handler means Phase 3's row 1a did not apply (no `## Validation` gate, or the gate has already passed). No re-check here — Phase 3 is the single point of decision.
 
 1. Transition Linear to `Done` via `save_issue` with `state: "Done"`. Write a terminal comment: `<!-- ship-issue:event:merged --> ✅ Merged: <PR URL>.`
-2. **Compact-on-merge** (skip in no-compact mode): if at least one non-terminal item remains in the queue, print the compaction prompt as the last output of this wake, after the Phase 8 block — `🗜 Sub-issue <ref> merged. Run /compact now to free context before picking up <next-ref>.` Trigger boundary, safety rationale, and exact rules live in [`../_shared/compact-on-merge.md`](../_shared/compact-on-merge.md). At most once per wake; never when the merged item was the last (the loop is about to self-cancel).
-3. Advance to the next item in the list.
+2. **Compact-on-merge** (skip in no-compact mode): if at least one non-terminal item remains in the queue, print the compaction prompt as the last output of this wake, after the Phase 8 block — `🗜 Sub-issue <ref> merged. Run /compact now to free context before picking up <next-ref>.` Trigger boundary, safety rationale, and exact rules live in [`../_shared/compact-on-merge.md`](../_shared/compact-on-merge.md). Never fires when the merged item was the last (the loop is about to self-cancel).
+3. **If the step-2 prompt fired, end the wake here** — return rather than working `<next-ref>` in this same wake; the next `/loop` wake re-derives state (the merged item is now skipped by Phase 2) and picks up `<next-ref>` fresh (safe per "Notes on persistence"). This is what gives the user a `/compact` opportunity at the boundary — same-wake continuation would surface the prompt only after `<next-ref>`'s work has already accumulated. Otherwise (no-compact mode, or no non-terminal items remain), advance to the next item in the list.
 
 ### `blocked-verify`
 

@@ -16,22 +16,34 @@ here, in one place.
 
 **Workers** (`ship-issue`, `ship-issue-gh`): inside the `merged` handler, **after** the
 terminal state is written to the tracker (status transition + `<!-- ship-issue:event:merged -->`
-comment posted) and **before** advancing to the next item in the list. Fire only when at
-least one **non-terminal item remains** in this invocation's queue — when the merged item
-was the last, the loop is about to self-cancel and print its summary; compacting buys
-nothing.
+comment posted). Fire only when at least one **non-terminal item remains** in this
+invocation's queue — when the merged item was the last, the loop is about to self-cancel
+and print its summary; compacting buys nothing.
+
+**The prompt ends the wake.** After printing it, the worker **returns** — it does NOT
+continue to the next item in the same wake. Same-wake continuation would implement
+`<next-ref>` first and surface the prompt only when the wake finally yields, by which
+point the merged item's context has already been joined by the next item's work and the
+prompt lands too late to free anything. Ending the wake is what gives the user a real
+`/compact` opportunity at the boundary; the next `/loop` wake re-derives state (the
+merged item is now skipped by the pick-next phase) and starts `<next-ref>` fresh — safe
+by the stateless-resume guarantee.
 
 **Coordinators** (`ship-epic`, `ship-epic-gh`): at the **end of a wake that observed one
 or more children newly reach `merged`**, after the `<!-- ship-epic:status -->` aggregation
 comment is posted and before the wake returns. "Newly merged" is derived statelessly from
 the tracker: a child counts as newly merged when the most recent **prior**
-`<!-- ship-epic:status -->` comment did not list it as `merged` (or no prior status
-comment exists). Same last-item rule: when the wake is terminal (all merged → epic
-closing), skip — the loop is ending anyway.
+`<!-- ship-epic:status -->` comment exists and did not list it as `merged`.
+**First-wake baseline guard:** when NO prior status comment exists — the first
+coordinator wake, including resuming an epic whose children already merged before the
+coordinator ever ran — the current `merged` set is the **baseline**, not newly merged:
+this wake's status comment establishes the snapshot and no prompt is printed. Same
+last-item rule as workers: when the wake is terminal (all merged → epic closing), skip —
+the loop is ending anyway.
 
-**At most once per wake.** Two children merging in the same coordinator wake, or a worker
-advancing past one merged item to start the next, still produce exactly one compaction
-prompt.
+**At most once per wake.** Two children merging in the same coordinator wake still
+produce exactly one compaction prompt. (Workers are once-per-wake by construction — the
+prompt ends the wake.)
 
 ## What persists (why compacting here is safe)
 
@@ -88,7 +100,8 @@ Coordinators, at end-of-wake:
 
 `<ref>` / `<next-ref>` are the tracker IDs (`PROJ-66`, `<owner>/<repo>#43`). Print the
 line as the **last** output of the wake, after the Phase 8 status block, so it's the
-thing the user sees at the prompt.
+thing the user sees at the prompt. For workers it is structurally last — the wake ends
+immediately after it (see "The prompt ends the wake" above).
 
 ## `--no-compact` (opt-out flag)
 

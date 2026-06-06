@@ -163,11 +163,13 @@ Keep terminal output short on no-op wakes (no state changes since last wake) —
 
 ### Compact-on-merge (end of wake)
 
-When this wake observed **one or more sub-issues newly reach `merged`** — derived statelessly by comparing against the most recent *prior* `<!-- ship-epic:status -->` comment (a child is newly merged when that comment didn't list it as `merged`, or no prior status comment exists) — print, after the terminal block, as the last output of the wake:
+When this wake observed **one or more sub-issues newly reach `merged`** — derived statelessly by comparing against the most recent *prior* `<!-- ship-epic:status -->` comment (a child is newly merged when a prior status comment **exists** and didn't list it as `merged`) — print, after the terminal block, as the last output of the wake:
 
 ```
 🗜 <n> child(ren) merged this wake. Run /compact now to free context before the next coordinator wake.
 ```
+
+**First-wake baseline guard:** when no prior `<!-- ship-epic:status -->` comment exists — the first coordinator wake, including resuming an epic whose sub-issues already merged before the coordinator ever ran — treat the current `merged` set as the baseline, not as newly merged: this wake's status comment establishes the snapshot and no prompt is printed.
 
 Skip in no-compact mode, on wakes with no newly-merged children, and on terminal wakes (all merged → the epic is closing and the loop is ending anyway). At most once per wake regardless of how many children merged. Full rules: [`../_shared/compact-on-merge.md`](../_shared/compact-on-merge.md).
 
