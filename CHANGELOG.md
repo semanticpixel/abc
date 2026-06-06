@@ -15,6 +15,14 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-06-06
+
+### Changed
+
+- **`review-epic` + `review-epic-gh` post gate re-worded to match stateless reality** (PATCH — wording fix, not a behavior change): the Hard Rule previously claimed one `AskUserQuestion` approval "covers all subsequent posts for the life of the loop" while also stating no consent is persisted — impossible under the per-tick stateless model. Both skills now document the gate as **per-tick**: the first review pass of each tick that has a review to post asks once, approval covers that tick's posts, no-op ticks never ask, and a pending review blocks its tick until a human answers (walk-away *between* reviews, not *during* them). The unattended-posting alternative was considered and explicitly deferred. Carried from the PR #44 review follow-up.
+- **`review-epic-gh` Phase 2 gains the branch→PR resolution mitigations from `review-epic`** (cross-cut carried from the PR #45 review): on **0 matches** (custom branch name + no `Closes` trailer), fall back to the child issue's timeline cross-references before declaring `[no-pr-yet]`; on **2+ matches**, take the first open PR and flag the ambiguity in the tick output.
+- **README documents the two-session epic pattern as a first-class workflow**: new section with the terminal-pair diagram, the 5-step scaffold → two sessions → ship/review → clean-exit shape, the anti-pattern callout (never run reviewer + workers in one session), the per-tick post-gate trade-off, and an explicit **spec-mapped, not yet runtime-validated** status note for the review-epic pair's multi-repo routing and GitLab posting paths. Lifecycle diagram and repo-layout tree updated (`_shared/`, `review-epic/`, `review-epic-gh/` were missing); CLAUDE.md lifecycle line updated.
+
 ## [0.9.0] - 2026-06-06
 
 ### Added
