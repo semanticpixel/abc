@@ -8,7 +8,7 @@ Personal Claude Code marketplace shipping the **abc** plugin: a tight, opinionat
 
 Two parallel tracker families:
 
-- **Linear-flavored** (no suffix): `scaffold-sub-issues`, `ship-issue`, `ship-epic` — for work projects.
+- **Linear-flavored** (no suffix): `scaffold-sub-issues`, `ship-issue`, `ship-epic`, `review-epic` — for work projects.
 - **GitHub-flavored** (`-gh` suffix): same skills against GitHub Issues — for personal projects. The label scheme, task-list fence, and marker comments shared across the `-gh` family are documented in `plugins/abc/skills/scaffold-sub-issues-gh/github-conventions.md`.
 
 The `plan`, `pr`, `review`, `review-sweep` skills are tracker-agnostic; they don't have `-gh` siblings.
@@ -33,6 +33,7 @@ abc/
     │   ├── ship-issue-gh/               ← /abc:ship-issue-gh (GitHub)
     │   ├── ship-epic/                   ← /abc:ship-epic (Linear)
     │   ├── ship-epic-gh/                ← /abc:ship-epic-gh (GitHub)
+    │   ├── review-epic/                 ← /abc:review-epic (Linear, review-only)
     │   ├── review-epic-gh/              ← /abc:review-epic-gh (GitHub, review-only)
     │   ├── pr/                          ← /abc:pr (tracker-agnostic)
     │   ├── review/                      ← /abc:review
