@@ -15,6 +15,19 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.7.12] - 2026-06-05
+
+### Added
+
+- **`_shared/compact-on-merge.md` — new shared helper** documenting the compact-on-merge convention: trigger Claude Code conversation compaction at the natural terminal boundary of a shipped sub-issue (worker: inside the `merged` handler after the tracker writes, before advancing to the next queued item; coordinator: end of a wake that observed ≥1 child newly reach `merged`, derived statelessly from the prior `<!-- ship-epic:status -->` snapshot). Documents **what persists** (everything load-bearing lives in the tracker / cron / git — the post-compaction wake is identical to a fresh-session resume, which the skills already support) and the **mechanism decision**: researched fallback chain is (1) direct SDK `compact()` call — not available; (2) skill-runtime sentinel the harness interprets — not available (`PreCompact`/`PostCompact` hooks react to compaction, they can't trigger it); (3) documented user-action prompt (`🗜 Sub-issue <ref> merged. Run /compact now …`) — **ships as v1**, with the harness's built-in auto-compaction as the backstop and (1)/(2) recorded as the one-file upgrade path.
+- **`--no-compact` flag** on all four shipping skills (`ship-issue`, `ship-issue-gh`, `ship-epic`, `ship-epic-gh`): stripped from `$ARGUMENTS` before shape detection, retained in the raw arg string so the cron entry carries the opt-out across wakes (nothing is persisted locally), and propagated by coordinators to every worker they fire.
+
+### Changed
+
+- **`ship-issue` / `ship-issue-gh` `merged` handlers** gain a compact-on-merge step (after the terminal comment): print the compaction prompt as the last output of the wake when a non-terminal item remains, then **end the wake** — the next `/loop` wake picks up `<next-ref>` fresh post-compaction. Same-wake continuation would surface the prompt only after the next item's work accumulated, too late to free anything.
+- **`ship-epic` / `ship-epic-gh` Phase 4** gains a "Compact-on-merge (end of wake)" step: print the coordinator-variant prompt after the terminal block when ≥1 child newly merged this wake (vs. the prior `<!-- ship-epic:status -->` snapshot), with a **first-wake baseline guard** — no prior snapshot ⇒ the current merged set is the baseline, no prompt (prevents spurious prompts when resuming an epic with already-merged children). Skipped on no-op and terminal wakes.
+- **README skills table** rows for the four `ship-*` skills show the `[--no-compact]` flag, plus a note under the table pointing at the shared helper.
+
 ## [0.7.11] - 2026-05-23
 
 ### Added

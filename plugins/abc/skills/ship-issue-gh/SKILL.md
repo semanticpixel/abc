@@ -1,7 +1,7 @@
 ---
 name: ship-issue-gh
 description: GitHub · GitHub-Issues sibling of /abc:ship-issue. Drives a GitHub issue (or list, or parent with task-list children) from `pending` to `merged` through the implement → PR → address-review → merge loop. Emulates Linear's state machine on top of GitHub Issues using the label conventions documented in scaffold-sub-issues-gh/github-conventions.md. TRIGGER when the user says "/ship-issue-gh <owner>/<repo>#<n>", asks to ship/land/drive a GitHub issue, or wants Claude to take a GitHub-tracked ticket through review to merge. Also trigger when resuming work on a GitHub issue with an open PR and pending reviewer comments. Self-arms its own `/loop` — the user invokes once and walks away.
-argument-hint: "<owner>/<repo>#<n> | #<n> (in a git repo) | <owner>/<repo>#<n>,<owner>/<repo>#<m> | <owner>/<repo>#<parent> (walks task-list children) | milestone:<owner>/<repo>/<num-or-name>"
+argument-hint: "<owner>/<repo>#<n> | #<n> (in a git repo) | <owner>/<repo>#<n>,<owner>/<repo>#<m> | <owner>/<repo>#<parent> (walks task-list children) | milestone:<owner>/<repo>/<num-or-name> [--no-compact]"
 model: opus
 allowed-tools:
   - Skill
@@ -57,6 +57,8 @@ Where `<arg>` is one of:
 - A **parent issue** with a managed `## Sub-issues` task-list — children are resolved from the task-list and walked in body order
 - A **milestone**: `milestone:<owner>/<repo>/<num-or-name>` — expands to the milestone's non-terminal issues, ordered by `createdAt` ascending
 
+Any shape may carry a trailing `--no-compact` flag to suppress the compact-on-merge prompt — see [`../_shared/compact-on-merge.md`](../_shared/compact-on-merge.md).
+
 > The architecture (state machine, blocked-user triggers, escape hatches, locked decisions) lives in `DESIGN.md` alongside this file. The label scheme + marker comments + task-list fence live in `../scaffold-sub-issues-gh/github-conventions.md`. Read both before changing behavior. This file is the operational procedure.
 
 ---
@@ -64,6 +66,8 @@ Where `<arg>` is one of:
 ## Phase 0: Parse input
 
 Normalize `$ARGUMENTS` into an ordered list of fully-qualified `<owner>/<repo>#<n>` IDs.
+
+**Flag extraction (before shape detection):** detect and strip a trailing `--no-compact` flag from `$ARGUMENTS`. When present, set no-compact mode for this invocation — the compact-on-merge prompt (Phase 4 § `merged`) is skipped at every trigger boundary. Contract and rationale live in [`../_shared/compact-on-merge.md`](../_shared/compact-on-merge.md). Shape detection below runs on the flag-stripped string.
 
 ### Shape detection (in order, first match wins)
 
@@ -88,6 +92,8 @@ For `milestone:<owner>/<repo>/<num-or-name>`:
 ### Raw-arg retention
 
 Retain the **raw arg string** (as the user typed it — e.g. `<owner>/<repo>#42,<owner>/<repo>#43`, `milestone:<owner>/<repo>/3`, `<owner>/<repo>#100`, NOT the expanded list) for the self-arming check in Phase 0.5. It's the match key for `CronList` and `CronDelete`. For milestone args specifically, one loop polls the same milestone across wakes — new issues added to the milestone mid-flight get picked up on the next wake's re-derivation without spawning a second loop.
+
+A `--no-compact` flag is part of the raw arg string — it stays in the cron entry's command so the opt-out survives every subsequent wake (the skill persists nothing locally; the cron arg is the only carrier — see `../_shared/compact-on-merge.md` § `--no-compact`).
 
 The user's order is respected. The skill does not re-prioritise.
 
@@ -281,7 +287,8 @@ Reaching this handler means Phase 3's row 1a did not apply.
 
 1. Close the issue with `--reason completed`: `gh issue close <n> --repo <owner>/<repo> --reason completed`. (GitHub's auto-close from the merged PR's `Closes` trailer may have already closed it — that's fine; the call is idempotent and we still write the comment below.)
 2. Write a terminal comment: `gh issue comment <n> --repo <owner>/<repo> --body '<!-- ship-issue:event:merged --> ✅ Merged: <PR URL>.'`
-3. Advance to the next item in the list.
+3. **Compact-on-merge** (skip in no-compact mode): if at least one non-terminal item remains in the queue, print the compaction prompt as the last output of this wake, after the Phase 8 block — `🗜 Sub-issue <ref> merged. Run /compact now to free context before picking up <next-ref>.` Trigger boundary, safety rationale, and exact rules live in [`../_shared/compact-on-merge.md`](../_shared/compact-on-merge.md). Never fires when the merged item was the last (the loop is about to self-cancel).
+4. **If the step-3 prompt fired, end the wake here** — return rather than implementing `<next-ref>` in this same wake; the next `/loop` wake re-derives state (the merged item is now skipped by Phase 2) and picks up `<next-ref>` fresh (safe per "Notes on persistence"). This is what gives the user a `/compact` opportunity at the boundary — same-wake continuation would surface the prompt only after `<next-ref>`'s work has already accumulated. Otherwise (no-compact mode, or no non-terminal items remain), advance to the next item in the list.
 
 ### `blocked-verify`
 

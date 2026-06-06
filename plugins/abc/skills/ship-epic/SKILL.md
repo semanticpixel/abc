@@ -1,7 +1,7 @@
 ---
 name: ship-epic
 description: Linear · Coordinator for a Linear parent issue whose sub-issues span multiple repos. Builds a dependency graph from sub-issue `blocks`/`blocked by` relations, fires `/loop /abc:ship-issue <SUB-ID>` per ready sub-issue (truly parallel via independent cron entries), gates blocked sub-issues until upstreams merge, aggregates status into the parent. Self-arms its own `/loop` — invoke once and walk away. TRIGGER when the user says "/ship-epic PARENT-ID", asks to "ship this epic", or wants to drive a Linear parent through merge in parallel across repos.
-argument-hint: "PARENT-ID | https://linear.app/.../PARENT-ID | milestone:<uuid>"
+argument-hint: "PARENT-ID | https://linear.app/.../PARENT-ID | milestone:<uuid> [--no-compact]"
 model: opus
 allowed-tools:
   - Skill
@@ -39,6 +39,8 @@ See [`DESIGN.md`](./DESIGN.md) for the architectural design rationale. This file
 ## Phase 0: Parse input and self-arm
 
 ### Normalize the arg
+
+**Flag extraction (before shape detection):** detect and strip a trailing `--no-compact` flag from `$ARGUMENTS`. When present, set no-compact mode for this invocation — the compact-on-merge prompt (Phase 4) is skipped, and the flag propagates to every worker fired in Phase 3. The flag stays in the **raw arg string** used for cron arming/matching, so the opt-out survives every subsequent wake. Contract and rationale live in [`../_shared/compact-on-merge.md`](../_shared/compact-on-merge.md).
 
 `$ARGUMENTS` is one of:
 
@@ -113,6 +115,8 @@ For each sub-issue in `ready` state:
 Skill(skill: "loop", args: "6m /abc:ship-issue <SUB-ID>")
 ```
 
+In no-compact mode, append the flag so workers inherit the opt-out: `Skill(skill: "loop", args: "6m /abc:ship-issue <SUB-ID> --no-compact")` (see `../_shared/compact-on-merge.md` § `--no-compact`).
+
 This kicks off the worker's first wake and arms its own cron. The coordinator does NOT wait — it returns and the worker runs independently on its own loop.
 
 **Do not fire** workers for sub-issues already `in-flight` (the worker's own Phase 0.5 cron-match would no-op anyway, but skip explicitly for clarity and to avoid any potential race).
@@ -156,6 +160,18 @@ Next wake: /loop 10m /abc:ship-epic PROJ-100
 ```
 
 Keep terminal output short on no-op wakes (no state changes since last wake) — just one line: `no-op wake — 4 of 6 merged, 1 in-flight, 1 blocked-user`.
+
+### Compact-on-merge (end of wake)
+
+When this wake observed **one or more sub-issues newly reach `merged`** — derived statelessly by comparing against the most recent *prior* `<!-- ship-epic:status -->` comment (a child is newly merged when a prior status comment **exists** and didn't list it as `merged`) — print, after the terminal block, as the last output of the wake:
+
+```
+🗜 <n> child(ren) merged this wake. Run /compact now to free context before the next coordinator wake.
+```
+
+**First-wake baseline guard:** when no prior `<!-- ship-epic:status -->` comment exists — the first coordinator wake, including resuming an epic whose sub-issues already merged before the coordinator ever ran — treat the current `merged` set as the baseline, not as newly merged: this wake's status comment establishes the snapshot and no prompt is printed.
+
+Skip in no-compact mode, on wakes with no newly-merged children, and on terminal wakes (all merged → the epic is closing and the loop is ending anyway). At most once per wake regardless of how many children merged. Full rules: [`../_shared/compact-on-merge.md`](../_shared/compact-on-merge.md).
 
 ## Phase 5: Terminal states
 

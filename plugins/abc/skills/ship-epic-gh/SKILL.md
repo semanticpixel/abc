@@ -1,7 +1,7 @@
 ---
 name: ship-epic-gh
 description: GitHub · GitHub-Issues sibling of /abc:ship-epic. Coordinator for a GitHub parent issue whose children live in a managed `## Sub-issues` task-list. Builds a dependency graph from `blocks:#N` / `blocked-by:#N` labels on the children, fires `/loop 6m /abc:ship-issue-gh <owner>/<repo>#<n>` per ready child (truly parallel via independent cron entries), gates blocked children until upstreams merge, aggregates status into the parent. Self-arms its own `/loop` — invoke once and walk away. TRIGGER when the user says "/ship-epic-gh <owner>/<repo>#<n>", asks to "ship this epic" against a GitHub parent, or wants to drive a multi-repo GitHub epic through merge in parallel.
-argument-hint: "<owner>/<repo>#<n>"
+argument-hint: "<owner>/<repo>#<n> [--no-compact]"
 model: opus
 allowed-tools:
   - Skill
@@ -44,6 +44,8 @@ See [`DESIGN.md`](./DESIGN.md) for the architectural rationale + locked decision
 ## Phase 0: Parse input and self-arm
 
 ### Normalize the arg
+
+**Flag extraction (before shape detection):** detect and strip a trailing `--no-compact` flag from `$ARGUMENTS`. When present, set no-compact mode for this invocation — the compact-on-merge prompt (Phase 4) is skipped, and the flag propagates to every worker fired in Phase 3. The flag stays in the **raw arg string** used for cron arming/matching, so the opt-out survives every subsequent wake. Contract and rationale live in [`../_shared/compact-on-merge.md`](../_shared/compact-on-merge.md).
 
 `$ARGUMENTS` is one of:
 
@@ -115,6 +117,8 @@ For each child in `ready` state:
 Skill(skill: "loop", args: "6m /abc:ship-issue-gh <owner>/<repo>#<n>")
 ```
 
+In no-compact mode, append the flag so workers inherit the opt-out: `Skill(skill: "loop", args: "6m /abc:ship-issue-gh <owner>/<repo>#<n> --no-compact")` (see `../_shared/compact-on-merge.md` § `--no-compact`).
+
 This kicks off the worker's first wake and arms its own cron. The coordinator does NOT wait — it returns and the worker runs independently.
 
 **Do not fire** workers for children already `in-flight` (the worker's own Phase 0.5 cron-match would no-op anyway, but skip explicitly for clarity).
@@ -160,6 +164,18 @@ Next wake: /loop 10m /abc:ship-epic-gh <owner>/<repo>#100
 ```
 
 Keep terminal output short on no-op wakes (no state changes since last wake): just one line — `no-op wake — 4 of 6 merged, 1 in-flight, 1 blocked-user`.
+
+### Compact-on-merge (end of wake)
+
+When this wake observed **one or more children newly reach `merged`** — derived statelessly by comparing against the most recent *prior* `<!-- ship-epic:status -->` comment (a child is newly merged when a prior status comment **exists** and didn't list it as `merged`) — print, after the terminal block, as the last output of the wake:
+
+```
+🗜 <n> child(ren) merged this wake. Run /compact now to free context before the next coordinator wake.
+```
+
+**First-wake baseline guard:** when no prior `<!-- ship-epic:status -->` comment exists — the first coordinator wake, including resuming an epic whose children already merged before the coordinator ever ran — treat the current `merged` set as the baseline, not as newly merged: this wake's status comment establishes the snapshot and no prompt is printed.
+
+Skip in no-compact mode, on wakes with no newly-merged children, and on terminal wakes (all merged → the epic is closing and the loop is ending anyway). At most once per wake regardless of how many children merged. Full rules: [`../_shared/compact-on-merge.md`](../_shared/compact-on-merge.md).
 
 ## Phase 5: Terminal states
 
