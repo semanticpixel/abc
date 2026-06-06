@@ -88,28 +88,30 @@ For each **open** sub-issue, resolve where its PR/MR lives — same `repo:` labe
 
 1. Collect label names starting with `repo:`. Exactly one expected; `0` → skip the child this tick with a `[no-repo-label]` line in the output; `2+` → same skip, noting the ambiguity.
 2. Extract `<name>` from `repo:<name>` → workdir is the `<cwd>/<name>/` subdirectory. Missing subdir → skip with a `[no-workdir]` line.
-3. Detect the platform from `git -C <workdir> remote get-url origin`: contains `github.com` → `gh`; contains `gitlab.<host>` → `glab`; anything else → skip with `[unknown-platform]`.
+3. Detect the platform from `git -C <workdir> remote get-url origin`: contains `github.com` → `gh`; contains `gitlab.<host>` → `glab`; anything else → skip with `[unknown-platform]`. **Capture the repo identity from the same remote URL**: GitHub → `<owner>/<repo>`; GitLab → the project path (e.g. `group/subgroup/project`).
 4. Confirm CLI auth (`gh auth status` / `glab auth status`) once per platform per tick. Not authed → halt with the auth command — a reviewer that can read but not post would burn the dedup-free review work every tick.
 
-Skipped children are **not** errors — this skill is review-only, so it degrades by narrowing coverage and saying so, rather than halting the whole loop the way a worker must. Cache the `{workdir, platform, cli}` tuple per child for this tick; re-resolve fresh next tick.
+Skipped children are **not** errors — this skill is review-only, so it degrades by narrowing coverage and saying so, rather than halting the whole loop the way a worker must. Cache the `{workdir, platform, cli, repo}` tuple per child for this tick; re-resolve fresh next tick.
+
+**Repo routing on every VCS call (load-bearing in multi-repo epics).** The loop's cwd is not the child's workdir, so neither CLI may rely on cwd-based repo resolution: every `gh` call passes `--repo <owner>/<repo>` explicitly, every `glab mr` call passes `-R <project-path>`, and every `glab api` call substitutes the **URL-encoded project path** for the project segment (`projects/<group%2Fproject>/merge_requests/...`) instead of the cwd-resolved `:id` placeholder — `:id` would silently resolve against the wrong project (or none) from the loop's cwd.
 
 ## Phase 1: Bootstrap context (per tick, ≤30KB)
 
 Load fresh each tick (the tick interval keeps the prompt cache warm; re-fetching also picks up mid-epic spec edits):
 
 1. **Parent issue description verbatim** — the source of truth.
-2. **Per child** (from the `parentId` listing): title, `statusType`, dependency relations (`blocks` / `blocked by` from `includeRelations`), and the **acceptance-criteria section** of its description — a `## Acceptance criteria` heading or an `- **acceptance:**` block, whichever convention the scaffold used. Skip scope / out-of-scope prose unless a review needs it.
+2. **Per child** (from the `parentId` listing): title, `statusType`, dependency relations, and the **acceptance-criteria section** of its description. Relations come from a **per-child `get_issue` with `includeRelations: true`** — the `parentId` listing doesn't carry them (same pattern as `ship-epic` Phase 1). They're bootstrap context, not load-bearing; skip the per-child fetches when the tick is already over budget. The acceptance criteria live under a `## Acceptance criteria` heading or an `- **acceptance:**` block, whichever convention the scaffold used. Skip scope / out-of-scope prose unless a review needs it.
 
    **Dedup against the parent (load-bearing for the budget).** Scaffolded child descriptions are usually verbatim ST-sections of the parent PLAN, so naive parent+children assembly roughly **doubles** the spec bytes. When a child's spec text already appears in the parent description, do **not** re-include it — cite its location ("ST-4 section of the parent"). Include a child's own description only where it diverges from the parent's section (edited mid-epic). Same rule and reference measurement as `review-epic-gh` Phase 1.
-3. **Merged sibling PRs/MRs**: per PR/MR, the summary review comment this skill previously posted (if any) plus a **per-file change summary**: GitHub — `gh api /repos/<owner>/<repo>/pulls/<n>/files --jq '.[] | "\(.filename) +\(.additions) -\(.deletions)"'` (`gh pr diff` has no `--stat`); GitLab — `glab api "projects/:id/merge_requests/<iid>/diffs" --paginate` for the file list (`new_path` per entry; the API doesn't expose per-file +/− counts — fall back to `glab mr diff <iid>` only when a review needs a specific decision).
+3. **Merged sibling PRs/MRs**: per PR/MR, the summary review comment this skill previously posted (if any) plus a **per-file change summary**: GitHub — `gh api /repos/<owner>/<repo>/pulls/<n>/files --jq '.[] | "\(.filename) +\(.additions) -\(.deletions)"'` (`gh pr diff` has no `--stat`); GitLab — `glab api "projects/<encoded-project-path>/merge_requests/<iid>/diffs" --paginate` for the file list (`new_path` per entry; the API doesn't expose per-file +/− counts — fall back to `glab mr diff <iid> -R <project-path>` only when a review needs a specific decision).
 4. **Pending children's acceptance criteria** — the forward-compat lens: what will later sub-issues exercise? (Subject to the same parent-dedup rule.)
 
 **Budget: keep the assembled context under ~30KB.** When over, trim in this order: (1) merged-sibling full diffs → per-file change summary only, (2) per-file summaries → PR title + summary-comment only, (3) pending children's criteria → titles only. Never trim the parent description or the under-review child's acceptance criteria.
 
 ## Phase 2: Enumerate review targets (dedup)
 
-1. List candidate PRs/MRs: for each **open** child that survived Phase 0.7, take the child's `gitBranchName` (Linear provides this on the issue object) and the issue's attachments/links, then: GitHub — `gh pr list --repo <owner>/<repo> --state open --head <gitBranchName> --json number,headRefOid,url`; GitLab — `glab mr list --source-branch <gitBranchName> --output json`.
-2. For each candidate, read its HEAD SHA (GitHub: `headRefOid`; GitLab: `diff_refs.head_sha` from `glab mr view <iid> --output json`) and fetch its top-level comments (GitHub: `gh api /repos/<owner>/<repo>/issues/<pr>/comments`; GitLab: `glab api "projects/:id/merge_requests/<iid>/notes" --paginate`). If a `<!-- review-epic:reviewed-at:<sha> -->` marker matching the **current** HEAD SHA exists → **skip this PR/MR with no further API calls**. This dedup check is the only cost for unchanged PRs.
+1. List candidate PRs/MRs: for each **open** child that survived Phase 0.7, take the child's `gitBranchName` (Linear provides this on the issue object) and the issue's attachments/links, then: GitHub — `gh pr list --repo <owner>/<repo> --state open --head <gitBranchName> --json number,headRefOid,url`; GitLab — `glab mr list --source-branch <gitBranchName> -R <project-path> --output json`.
+2. For each candidate, read its HEAD SHA (GitHub: `headRefOid`; GitLab: `diff_refs.head_sha` from `glab mr view <iid> -R <project-path> --output json`) and fetch its top-level comments (GitHub: `gh api /repos/<owner>/<repo>/issues/<pr>/comments`; GitLab: `glab api "projects/<encoded-project-path>/merge_requests/<iid>/notes" --paginate`). If a `<!-- review-epic:reviewed-at:<sha> -->` marker matching the **current** HEAD SHA exists → **skip this PR/MR with no further API calls**. This dedup check is the only cost for unchanged PRs.
 3. A PR/MR whose markers all reference older SHAs has new commits → it's a review target (the stale marker stays; history is the audit trail).
 
 No targets this tick → print the one-line no-op summary (Phase 6) and return.
@@ -118,20 +120,20 @@ No targets this tick → print the one-line no-op summary (Phase 6) and return.
 
 For each target, in sub-issue order:
 
-1. Fetch the diff: `gh pr diff <n> --repo <owner>/<repo>` or `glab mr diff <iid>`.
+1. Fetch the diff: `gh pr diff <n> --repo <owner>/<repo>` or `glab mr diff <iid> -R <project-path>`.
 2. Spawn the existing **`abc:reviewer`** subagent (`Agent` tool, `subagent_type: reviewer`) — do **not** edit `agents/reviewer.md`; extend its input via the prompt. Pass:
    - The unified diff (its standard input contract), plus
    - **Cross-cutting epic context** from Phase 1: the parent spec, this child's acceptance criteria **verbatim with their sub-issue ID**, merged-sibling decisions, and pending children's criteria — with the instruction to additionally evaluate (a) which acceptance bullets this diff satisfies/misses, citing them **by sub-issue ID and bullet**, and (b) forward-looking flags where a pending sub-issue will exercise this code differently.
 3. **One-time post gate** (first review pass of this invocation only): show the assembled review — inline comments plus summary — via `AskUserQuestion` for a single go/no-go. Approval covers this and **every subsequent post** for the life of the loop (see Hard Rules); decline → halt the loop and `CronDelete` via the Phase 0 match rule. Later passes skip this step entirely.
 4. Post the review:
    - **GitHub** — one call: `POST /repos/<owner>/<repo>/pulls/<pr>/reviews` with `event: COMMENT`, the reviewer's inline comments as the `comments` array, and the summary as the review body.
-   - **GitLab** — no batch review API: post each inline comment as a positioned discussion (`glab api "projects/:id/merge_requests/<iid>/discussions" -f body=<text> -f 'position[...]'` using `diff_refs` from the MR for `base_sha`/`start_sha`/`head_sha`), then the summary as one `glab mr note <iid> --message <body>`.
+   - **GitLab** — no batch review API: post each inline comment as a positioned discussion (`glab api "projects/<encoded-project-path>/merge_requests/<iid>/discussions" -f body=<text> -f 'position[...]'` using `diff_refs` from the MR for `base_sha`/`start_sha`/`head_sha`), then the summary as one `glab mr note <iid> -R <project-path> --message <body>`.
 
    The **summary body** has explicit structure either way:
    - **(a) Inline comments** — one-line index of what was flagged.
    - **(b) Spec cross-reference** — "satisfies ST-N bullet X … misses ST-N bullet Y", citing specific acceptance bullets by sub-issue ID, never free-text paraphrase.
    - **(c) Forward-looking flags** — "ST-N+1 will exercise this path differently; current shape will need rework", citing the pending child.
-5. Drop the dedup marker as a **marker-only** top-level comment on the PR/MR (the marker is the entire body, matching the `<!-- ship-issue:* -->` marker-only convention): `gh pr comment <n> --repo <owner>/<repo> --body '<!-- review-epic:reviewed-at:<sha> -->'` or `glab mr note <iid> --message '<!-- review-epic:reviewed-at:<sha> -->'` where `<sha>` is the HEAD SHA the review was produced against. **Never on the Linear issue.**
+5. Drop the dedup marker as a **marker-only** top-level comment on the PR/MR (the marker is the entire body, matching the `<!-- ship-issue:* -->` marker-only convention): `gh pr comment <n> --repo <owner>/<repo> --body '<!-- review-epic:reviewed-at:<sha> -->'` or `glab mr note <iid> -R <project-path> --message '<!-- review-epic:reviewed-at:<sha> -->'` where `<sha>` is the HEAD SHA the review was produced against. **Never on the Linear issue.**
 6. **Compact-between-reviews boundary** — see Phase 4 before starting the next target.
 
 ## Phase 4: Compact between reviews
