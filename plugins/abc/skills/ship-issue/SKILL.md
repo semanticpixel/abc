@@ -1,7 +1,7 @@
 ---
 name: ship-issue
 description: Linear · Drives a Linear issue (or list, or parent with sub-issues) from Backlog to Done through the implement → PR → address-review → merge loop. TRIGGER when the user says "/ship-issue TICKET-ID", asks to ship/land/drive/autoland a ticket, or wants Claude to take a Linear issue through review to merge. Also trigger when resuming work on a ticket with an open PR and pending reviewer comments. Supports GitHub + GitLab and multi-repo parent issues via `repo:` Linear labels. Self-arms its own `/loop` — the user invokes once and walks away.
-argument-hint: "TICKET-ID | https://linear.app/.../TICKET-ID | ID1,ID2,ID3 | PARENT-ID | milestone:UUID"
+argument-hint: "TICKET-ID | https://linear.app/.../TICKET-ID | ID1,ID2,ID3 | PARENT-ID | milestone:UUID [--no-compact]"
 model: opus
 allowed-tools:
   - Skill
@@ -61,6 +61,8 @@ Where `<arg>` is one of:
 - A parent issue ID — sub-issues are resolved and walked in Linear's default order
 - A project milestone: `milestone:<uuid>` — expands to non-terminal issues in that milestone, ordered by `createdAt` ascending
 
+Any shape may carry a trailing `--no-compact` flag to suppress the compact-on-merge prompt — see [`../_shared/compact-on-merge.md`](../_shared/compact-on-merge.md).
+
 > The architecture (state machine, blocked-user triggers, escape hatches, locked decisions) lives in `DESIGN.md` alongside this file. Read that first if you're changing behavior. This file is the operational procedure.
 
 ---
@@ -68,6 +70,8 @@ Where `<arg>` is one of:
 ## Phase 0: Parse input
 
 Normalize `$ARGUMENTS` into an ordered list of Linear ticket IDs. The branch taken depends on the shape of the arg:
+
+**Flag extraction (before shape detection):** detect and strip a trailing `--no-compact` flag from `$ARGUMENTS`. When present, set no-compact mode for this invocation — the compact-on-merge prompt (Phase 4 § `merged`) is skipped at every trigger boundary. Contract and rationale live in [`../_shared/compact-on-merge.md`](../_shared/compact-on-merge.md). Shape detection below runs on the flag-stripped string.
 
 ### Shape detection (in order, first match wins)
 
@@ -98,6 +102,8 @@ For `milestone:<uuid>`:
 ### Raw-arg retention
 
 Retain the **raw arg string** (as the user typed it — e.g. `PROJ-89,PROJ-90`, `milestone:<uuid>`, `PROJ-100`, NOT the expanded list) for the self-arming check in Phase 0.5. It's the match key for `CronList` and `CronDelete`. For milestone args specifically, this means one loop polls the same milestone across wakes — new issues added to the milestone mid-flight get picked up on the next wake's re-derivation without spawning a second loop.
+
+A `--no-compact` flag is part of the raw arg string — it stays in the cron entry's command so the opt-out survives every subsequent wake (the skill persists nothing locally; the cron arg is the only carrier — see `../_shared/compact-on-merge.md` § `--no-compact`).
 
 The user's order is respected. The skill does not re-prioritise.
 
@@ -303,7 +309,8 @@ Entered from Phase 3 row 3 (new review comments) or row 3a (failing assertion CI
 Reaching this handler means Phase 3's row 1a did not apply (no `## Validation` gate, or the gate has already passed). No re-check here — Phase 3 is the single point of decision.
 
 1. Transition Linear to `Done` via `save_issue` with `state: "Done"`. Write a terminal comment: `<!-- ship-issue:event:merged --> ✅ Merged: <PR URL>.`
-2. Advance to the next item in the list.
+2. **Compact-on-merge** (skip in no-compact mode): if at least one non-terminal item remains in the queue, print the compaction prompt as the last output of this wake, after the Phase 8 block — `🗜 Sub-issue <ref> merged. Run /compact now to free context before picking up <next-ref>.` Trigger boundary, safety rationale, and exact rules live in [`../_shared/compact-on-merge.md`](../_shared/compact-on-merge.md). At most once per wake; never when the merged item was the last (the loop is about to self-cancel).
+3. Advance to the next item in the list.
 
 ### `blocked-verify`
 
