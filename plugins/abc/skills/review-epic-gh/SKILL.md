@@ -39,6 +39,7 @@ The label scheme, task-list fence, and marker conventions are documented in [`..
 - **Never edit content inside the parent's `<!-- ship-epic:sub-issues:start/end -->` fence** — or anywhere else in the parent body. The shipping skills own it.
 - **Do not run this skill in the same Claude Code session as `ship-issue-gh` / `ship-epic-gh` workers.** The dual-context perspective is the whole point: the implementer session holds per-PR context, this session holds the epic-wide spec. One session holding both collapses the benefit (and bloats context twice as fast).
 - **Always self-cancel the cron on termination** (Phase 5), mirroring the `ship-*` family contract.
+- **One-time post gate, then unattended-by-design.** The repo convention gates posting reviewer comments behind `AskUserQuestion`; a walk-away loop can't ask every tick. Reconciliation: the **first review pass of an invocation** is confirmed via `AskUserQuestion` (Phase 3 step 3); on approval, that consent covers all subsequent posts for the life of the loop. Declining halts the loop. A session restart re-asks once — the gate is per-invocation, not persisted.
 
 ## Phase 0: Parse input and self-arm
 
@@ -58,7 +59,7 @@ Anything else (Linear IDs, bare `#<n>`, milestone refs, comma-lists) → reject 
 ### Fetch parent and validate
 
 1. `gh issue view <n> --repo <owner>/<repo> --json number,title,state,stateReason,labels,body`.
-2. If `state=closed` → the epic is already done. Print a one-line "epic closed — nothing to review" summary and exit **without arming a loop**.
+2. If `state=closed` → the epic is done, but **how to exit depends on whether a cron is armed**. Run the cron-entry match rule (below): if a matching entry **exists** (this is a loop tick), terminate via Phase 5 — emit the reviewed-PRs summary and `CronDelete` the entry — so the loop self-cancels instead of zombie-firing "epic closed" every 12 minutes. Only when **no** matching cron exists (a fresh invocation against an already-closed epic) print a one-line "epic closed — nothing to review" and exit without arming.
 3. Locate the `<!-- ship-epic:sub-issues:start/end -->` fence. If missing → reject: "Parent has no managed `## Sub-issues` task-list. Run `/abc:scaffold-sub-issues-gh` first." Parse the `- [ ] / - [x] <ref>` entries to fully-qualified child IDs (same parse rule as `ship-epic-gh` Phase 0).
 
 ### Self-arm the loop
@@ -79,11 +80,11 @@ Load fresh each tick (the tick interval keeps the prompt cache warm; re-fetching
 1. **Parent issue body verbatim** — the source of truth.
 2. **Per child** (from the task-list): title, state, dependency labels (`blocks:*` / `blocked-by:*`), and the **acceptance-criteria section** of its body — a `## Acceptance criteria` heading or an `- **acceptance:**` block, whichever convention the scaffold used. Skip scope / out-of-scope prose unless a review needs it.
 
-   **Dedup against the parent (load-bearing for the budget).** Scaffolded child bodies are usually verbatim ST-sections of the parent PLAN — measured on the `semanticpixel/carn#2` fixture, the parent body is ~29.7KB and the 11 child bodies are another ~29.3KB of near-pure duplication; naive assembly doubles the budget. When a child's spec text already appears in the parent body, do **not** re-include it — cite its location ("ST-4 section of the parent"). Include a child's own body only where it diverges from the parent's section (edited mid-epic).
-3. **Merged sibling PRs**: per PR, the summary review comment this skill previously posted (if any) plus a **diffstat** (`gh pr diff <n> --stat`). Full diffs of merged siblings only when a current review needs to check a specific decision.
+   **Dedup against the parent (load-bearing for the budget).** Scaffolded child bodies are usually verbatim ST-sections of the parent PLAN, so naive parent+children assembly roughly **doubles** the spec bytes. When a child's spec text already appears in the parent body, do **not** re-include it — cite its location ("ST-4 section of the parent"). Include a child's own body only where it diverges from the parent's section (edited mid-epic). The rule is the invariant; as an illustrative dated measurement (2026-06, `semanticpixel/carn#2`, 11 children): parent ~29.7KB, child bodies another ~29.3KB of near-pure duplication — dedup brings bootstrap to the parent body alone, inside the budget. Re-measure if a different epic becomes the reference fixture.
+3. **Merged sibling PRs**: per PR, the summary review comment this skill previously posted (if any) plus a **per-file change summary** from the API: `gh api /repos/<owner>/<repo>/pulls/<n>/files --jq '.[] | "\(.filename) +\(.additions) -\(.deletions)"'` (`gh pr diff` has no `--stat` flag — only `--name-only` and `--patch`). Full diffs (`gh pr diff <n>`) of merged siblings only when a current review needs to check a specific decision.
 4. **Pending children's acceptance criteria** — the forward-compat lens: what will later sub-issues exercise? (Subject to the same parent-dedup rule.)
 
-**Budget: keep the assembled context under ~30KB.** With parent-dedup, the carn#2 fixture lands at ~30KB (the parent body alone). When over, trim in this order: (1) merged-sibling full diffs → diffstat only, (2) merged-sibling diffstats → PR title + summary-comment only, (3) pending children's criteria → titles only. Never trim the parent body or the under-review child's acceptance criteria.
+**Budget: keep the assembled context under ~30KB.** When over, trim in this order: (1) merged-sibling full diffs → per-file change summary only, (2) per-file summaries → PR title + summary-comment only, (3) pending children's criteria → titles only. Never trim the parent body or the under-review child's acceptance criteria.
 
 ## Phase 2: Enumerate review targets (dedup)
 
@@ -101,12 +102,13 @@ For each target PR, in task-list order:
 2. Spawn the existing **`abc:reviewer`** subagent (`Agent` tool, `subagent_type: reviewer`) — do **not** edit `agents/reviewer.md`; extend its input via the prompt. Pass:
    - The unified diff (its standard input contract), plus
    - **Cross-cutting epic context** from Phase 1: the parent spec, this child's acceptance criteria **verbatim with their sub-issue ID**, merged-sibling decisions, and pending children's criteria — with the instruction to additionally evaluate (a) which acceptance bullets this diff satisfies/misses, citing them **by sub-issue ID and bullet**, and (b) forward-looking flags where a pending sub-issue will exercise this code differently.
-3. Post the review in one `gh api` call: `POST /repos/<owner>/<repo>/pulls/<pr>/reviews` with `event: COMMENT`, the reviewer's inline comments as the `comments` array, and a **summary body** with explicit structure:
+3. **One-time post gate** (first review pass of this invocation only): show the assembled review — inline comments plus summary — via `AskUserQuestion` for a single go/no-go. Approval covers this and **every subsequent post** for the life of the loop (see Hard Rules); decline → halt the loop and `CronDelete` via the Phase 0 match rule. Later passes skip this step entirely.
+4. Post the review in one `gh api` call: `POST /repos/<owner>/<repo>/pulls/<pr>/reviews` with `event: COMMENT`, the reviewer's inline comments as the `comments` array, and a **summary body** with explicit structure:
    - **(a) Inline comments** — one-line index of what was flagged.
    - **(b) Spec cross-reference** — "satisfies ST-N bullet X … misses ST-N bullet Y", citing specific acceptance bullets by sub-issue ID, never free-text paraphrase.
    - **(c) Forward-looking flags** — "ST-N+1 will exercise this path differently; current shape will need rework", citing the pending child.
-4. Drop the dedup marker as a **marker-only** top-level PR comment (the marker is the entire body, matching the `<!-- ship-issue:* -->` marker-only convention): `gh pr comment <n> --repo <owner>/<repo> --body '<!-- review-epic:reviewed-at:<sha> -->'` where `<sha>` is the HEAD SHA the review was produced against.
-5. **Compact-between-reviews boundary** — see Phase 4 before starting the next target.
+5. Drop the dedup marker as a **marker-only** top-level PR comment (the marker is the entire body, matching the `<!-- ship-issue:* -->` marker-only convention): `gh pr comment <n> --repo <owner>/<repo> --body '<!-- review-epic:reviewed-at:<sha> -->'` where `<sha>` is the HEAD SHA the review was produced against.
+6. **Compact-between-reviews boundary** — see Phase 4 before starting the next target.
 
 ## Phase 4: Compact between reviews
 
