@@ -33,6 +33,7 @@ abc/
     │   ├── ship-issue-gh/               ← /abc:ship-issue-gh (GitHub)
     │   ├── ship-epic/                   ← /abc:ship-epic (Linear)
     │   ├── ship-epic-gh/                ← /abc:ship-epic-gh (GitHub)
+    │   ├── review-epic-gh/              ← /abc:review-epic-gh (GitHub, review-only)
     │   ├── pr/                          ← /abc:pr (tracker-agnostic)
     │   ├── review/                      ← /abc:review
     │   └── review-sweep/                ← /abc:review-sweep
