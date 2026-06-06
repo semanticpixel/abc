@@ -12,8 +12,6 @@ allowed-tools:
   - Grep
   - Glob
   - AskUserQuestion
-  - Bash(pwd:*)
-  - Bash(ls:*)
   - Bash(git remote:*)
   - Bash(gh auth status:*)
   - Bash(gh pr view:*)
@@ -111,6 +109,9 @@ Load fresh each tick (the tick interval keeps the prompt cache warm; re-fetching
 ## Phase 2: Enumerate review targets (dedup)
 
 1. List candidate PRs/MRs: for each **open** child that survived Phase 0.7, take the child's `gitBranchName` (Linear provides this on the issue object) and the issue's attachments/links, then: GitHub — `gh pr list --repo <owner>/<repo> --state open --head <gitBranchName> --json number,headRefOid,url`; GitLab — `glab mr list --source-branch <gitBranchName> -R <project-path> --output json`.
+
+   **0 matches** — `gitBranchName` is Linear's *suggested* slug; the developer may have named the real branch differently. Fall back to the child's Linear attachments/links: extract a PR/MR URL and resolve it directly (`gh pr view <url> --json number,state,headRefOid,url` / `glab mr view <url> --output json`). Only when both the branch lookup and the attachments miss is the child `[no-pr-yet]`.
+   **2+ matches** (branch reuse, closed-and-reopened) — take the first **open** PR/MR and flag the ambiguity in the tick output (e.g. `[reviewed, 2 PRs on branch — picked #N]`). The same 0/2+ rule applies to URLs from the attachments fallback.
 2. For each candidate, read its HEAD SHA (GitHub: `headRefOid`; GitLab: `diff_refs.head_sha` from `glab mr view <iid> -R <project-path> --output json`) and fetch its top-level comments (GitHub: `gh api /repos/<owner>/<repo>/issues/<pr>/comments`; GitLab: `glab api "projects/<encoded-project-path>/merge_requests/<iid>/notes" --paginate`). If a `<!-- review-epic:reviewed-at:<sha> -->` marker matching the **current** HEAD SHA exists → **skip this PR/MR with no further API calls**. This dedup check is the only cost for unchanged PRs.
 3. A PR/MR whose markers all reference older SHAs has new commits → it's a review target (the stale marker stays; history is the audit trail).
 
@@ -127,7 +128,9 @@ For each target, in sub-issue order:
 3. **One-time post gate** (first review pass of this invocation only): show the assembled review — inline comments plus summary — via `AskUserQuestion` for a single go/no-go. Approval covers this and **every subsequent post** for the life of the loop (see Hard Rules); decline → halt the loop and `CronDelete` via the Phase 0 match rule. Later passes skip this step entirely.
 4. Post the review:
    - **GitHub** — one call: `POST /repos/<owner>/<repo>/pulls/<pr>/reviews` with `event: COMMENT`, the reviewer's inline comments as the `comments` array, and the summary as the review body.
-   - **GitLab** — no batch review API: post each inline comment as a positioned discussion (`glab api "projects/<encoded-project-path>/merge_requests/<iid>/discussions" -f body=<text> -f 'position[...]'` using `diff_refs` from the MR for `base_sha`/`start_sha`/`head_sha`), then the summary as one `glab mr note <iid> -R <project-path> --message <body>`.
+   - **GitLab** — no batch review API: post each inline comment as a positioned discussion via `glab api "projects/<encoded-project-path>/merge_requests/<iid>/discussions" -f body=<text>` with the **full six-field `position` object** ([API doc](https://docs.gitlab.com/api/discussions/#create-a-new-thread-in-the-merge-request-diff)): `position[base_sha]` / `position[start_sha]` / `position[head_sha]` from the MR's `diff_refs`, `position[position_type]=text` (literal), and `position[new_path]` + `position[new_line]` for the new side of the diff (use `old_path` / `old_line` for deletion and context-only lines). Omitting any of the last three returns a generic 400 "the position is invalid" that's easy to mis-attribute to `diff_refs`. Then the summary as one `glab mr note <iid> -R <project-path> --message <body>`.
+
+   **Post-failure guard (both platforms):** if any posting call returns 4xx, halt this PR/MR's pass **without dropping the step-5 dedup marker** and surface the response body in the tick output. The marker is only written after every post for that target succeeds — otherwise a malformed `position` would burn the review *and* mark the HEAD as reviewed, and the loop would never retry it.
 
    The **summary body** has explicit structure either way:
    - **(a) Inline comments** — one-line index of what was flagged.
