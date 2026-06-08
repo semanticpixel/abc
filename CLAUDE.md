@@ -4,7 +4,7 @@
 
 Personal Claude Code marketplace shipping the **abc** plugin: a tight, opinionated set of skills that automate the feature-shipping lifecycle.
 
-**Lifecycle:** `/abc:plan` → `/abc:scaffold-sub-issues[-gh]` → `/abc:ship-issue[-gh]` or `/abc:ship-epic[-gh]` → `/abc:review-sweep` → merged.
+**Lifecycle:** `/abc:plan` → `/abc:scaffold-sub-issues[-gh]` → `/abc:ship-issue[-gh]` or `/abc:ship-epic[-gh]` (optionally with `/abc:review-epic[-gh]` running in a parallel second session — see the README's two-session pattern) → `/abc:review-sweep` → merged.
 
 Two parallel tracker families:
 

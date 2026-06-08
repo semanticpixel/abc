@@ -59,6 +59,10 @@ For tracker-coupled skills (`scaffold-sub-issues`, `ship-issue`, `ship-epic` and
    /abc:ship-epic | ship-epic-gh   →  parallel multi-repo shipping (fans out workers)
         OR
    /abc:ship-issue | ship-issue-gh →  serial single-ticket worker (the unit)
+        ∥
+   /abc:review-epic | review-epic-gh  (second session, in parallel)
+                                    →  epic-context reviewer loop — reviews each
+                                       child PR/MR as it surfaces, never merges
         ↓
    /abc:review-sweep               →  bulk-triage your open PRs/MRs across GitHub + GitLab
         ↓
@@ -72,6 +76,31 @@ For tracker-coupled skills (`scaffold-sub-issues`, `ship-issue`, `ship-epic` and
 Each step in the pipeline produces an artifact the next step consumes. No state lives in shell history or chat memory — **the tracker (Linear or GitHub Issues) and the git remote are the source of truth**, so any step can resume across sessions, machines, or days.
 
 Pick the family by tracker: the unsuffixed skills target Linear; the `-gh` siblings target GitHub Issues. `plan`, `pr`, `review`, and `review-sweep` are tracker-agnostic and shared by both.
+
+---
+
+## The two-session epic pattern
+
+`ship-epic[-gh]` and `review-epic[-gh]` are designed to run as a **pair of Claude Code sessions** against the same epic:
+
+```
+Terminal A — implementer                Terminal B — reviewer
+/abc:ship-epic-gh owner/repo#10         /abc:review-epic-gh owner/repo#10
+  6m worker loop per ready child          one 12m review loop for the epic
+  holds bottom-up per-PR context          holds the top-down epic-wide spec
+```
+
+1. Scaffold the epic (`/abc:scaffold-sub-issues[-gh]`).
+2. Open **two** Claude Code sessions.
+3. Ship in one (`/abc:ship-epic[-gh]`, or `/abc:ship-issue[-gh]` on the parent); run `/abc:review-epic[-gh]` in the other.
+4. The reviewer posts spec-cross-referenced comments as child PRs surface; the workers pick those comments up on their next wake and address them; the reviewer re-reviews each new HEAD.
+5. The epic closes → both loops detect it and self-cancel within one tick/wake. Both sessions exit cleanly.
+
+> **Anti-pattern: one session wearing both hats.** Don't run `review-epic[-gh]` in the same Claude Code session as `ship-issue[-gh]` / `ship-epic[-gh]` workers. The split is the point — the implementer session holds bottom-up per-PR context while the reviewer session holds the top-down spec. One session holding both collapses the dual-context benefit and burns context twice as fast.
+
+**Reviewer post gate.** `review-epic[-gh]` keeps the repo's confirm-before-posting convention: a tick that produced a review asks once per tick (via `AskUserQuestion`) before posting anything. A pending review therefore blocks its tick until you answer — the reviewer session is walk-away *between* reviews, not *during* them. No-op ticks never ask. (Unattended posting was considered and deferred — see the Hard Rules in either `review-epic*` SKILL.md.)
+
+**Validation status.** The `review-epic` pair's behavior is **spec-mapped, not yet runtime-validated** end-to-end: the multi-repo routing and the GitLab MR positioned-discussion posting path have a documented contract but haven't been exercised against a live sandbox epic yet (`scripts/validate-plugin.py` checks manifest/frontmatter schema only, not behavior). The smoke checklist on the ST-4 PR tracks closing that gap.
 
 ---
 
@@ -252,6 +281,8 @@ abc/                                  ← marketplace root
     └── abc/                          ← plugin root
         ├── .claude-plugin/plugin.json
         ├── skills/
+        │   ├── _shared/
+        │   │   └── compact-on-merge.md
         │   ├── pr/SKILL.md
         │   ├── review/SKILL.md
         │   ├── review-sweep/SKILL.md
@@ -271,9 +302,15 @@ abc/                                  ← marketplace root
         │   ├── ship-epic/
         │   │   ├── SKILL.md
         │   │   └── DESIGN.md
-        │   └── ship-epic-gh/
+        │   ├── ship-epic-gh/
+        │   │   ├── SKILL.md
+        │   │   └── DESIGN.md
+        │   ├── review-epic/
+        │   │   ├── SKILL.md
+        │   │   └── linear-conventions.md
+        │   └── review-epic-gh/
         │       ├── SKILL.md
-        │       └── DESIGN.md
+        │       └── github-conventions.md
         ├── agents/
         │   ├── reviewer.md
         │   └── triage.md
