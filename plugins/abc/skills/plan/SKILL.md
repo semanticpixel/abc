@@ -13,7 +13,6 @@ allowed-tools:
   - Bash(ls:*)
   - Bash(pwd:*)
   - Bash(git remote:*)
-  - Bash(git log:*)
   - Bash(rg:*)
 ---
 

@@ -8,15 +8,12 @@ allowed-tools:
   - CronList
   - CronDelete
   - Read
-  - AskUserQuestion
   - Bash(pwd:*)
   - Bash(ls:*)
   - Bash(gh auth status:*)
   - Bash(gh issue view:*)
   - Bash(gh issue comment:*)
-  - Bash(gh issue edit:*)
   - Bash(gh issue close:*)
-  - Bash(gh pr view:*)
   - Bash(gh pr list:*)
   - Bash(gh api:*)
 ---
@@ -129,6 +126,8 @@ If multiple children are `ready` in the same wake, fire all of them — the work
 
 ### GitHub comment on the parent
 
+Resolve each child's PR URL for the `Latest` column via `gh pr list --repo <owner>/<repo> --search "<child-ref>" --state all --json url,state,mergedAt` (take the most recent linked PR) — this is the only PR-discovery call the coordinator makes; it never fetches PR bodies or diffs.
+
 Append (not edit) a single `<!-- ship-epic:status -->` comment on the parent with the current snapshot. The task-list checkboxes in the parent body auto-toggle when each child closes — GitHub manages that natively; the skill does not touch the body for this purpose:
 
 ```
@@ -145,7 +144,14 @@ Wake: 2026-05-17T18:30:00Z  (4 of 6 merged)
 | blocked-user | <owner>/repo-c#106 | awaiting-manual-verification |
 ```
 
-Use `gh issue comment <parent-n> --repo <owner>/<repo> --body-file <tmpfile>`.
+Post it by piping the body on stdin (no `Write` tool needed, stays inside the existing `gh issue comment` grant):
+
+```
+gh issue comment <parent-n> --repo <owner>/<repo> --body-file - <<'EOF'
+<!-- ship-epic:status -->
+... snapshot table ...
+EOF
+```
 
 ### Terminal block (Phase 8-style output)
 

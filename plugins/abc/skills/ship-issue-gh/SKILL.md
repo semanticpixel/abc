@@ -25,6 +25,8 @@ allowed-tools:
   - Bash(git remote:*)
   - Bash(git branch:*)
   - Bash(git rebase:*)
+  - Bash(git -C * remote get-url *)
+  - Bash(git -C * log *)
   - Bash(gh pr:*)
   - Bash(gh api:*)
   - Bash(gh auth status:*)
@@ -43,7 +45,6 @@ allowed-tools:
   - Bash(npx:*)
   - Bash(yarn:*)
   - Bash(node:*)
-  - AskUserQuestion
 ---
 
 Drive a GitHub issue (or ordered list of issues, or parent issue with a managed `## Sub-issues` task-list) from `pending` to `merged` through the implement → open-PR → address-review → merge loop. GitHub-only. Stateless across sessions — GitHub Issues + the PR's check runs are the sources of truth.
@@ -143,7 +144,7 @@ For **each** item in the list, apply the per-item resolution rule:
 
 **Cache** the resolved `{workdir, owner, repo}` tuple per issue for this invocation. Re-resolution on the next `/loop` wake is cheap and handles the case where the user added/removed a label mid-flight.
 
-**`gh` version check.** On the first wake, run `gh --version` and confirm `>= 2.40` (required for reliable `--json body` on `gh issue view`). If older → `blocked-user` with the upgrade command.
+**`gh` capability.** This skill relies on `--json body` support on `gh issue view`. If a `gh issue view ... --json body` call fails because the flag is unsupported (very old `gh`) → `blocked-user` with reason `gh-too-old-for-json-body` and the upgrade command. No proactive `gh --version` probe — treat the first failing `--json` call as the signal.
 
 ## Phase 2: Pick the next item
 
@@ -202,11 +203,7 @@ If neither marker exists on the branch, treat **all** open review comments as ne
 
 - **Always** include a `<!-- ship-issue:commit -->` HTML comment line in the commit body. Anchors the Phase 3 lookup above and is scoped under the existing `<!-- ship-issue:* -->` namespace, so it doubles as a Skill-authored audit signal in `git log`.
 - **By default**, also include a `Co-Authored-By: Claude <noreply@anthropic.com>` trailer (exact string) for backward-compat with historical skill-commit detection.
-- **Skip the trailer** when any reachable `CLAUDE.md` forbids it. Detection: case-insensitive grep for `co-authored-by` across the workdir's `CLAUDE.md`, any ancestor `CLAUDE.md` walking up to `/`, and `~/.claude/CLAUDE.md` — any hit ⇒ skip the trailer (the HTML marker alone is sufficient). The heuristic is intentionally conservative — a false positive only omits a redundant trailer, while a false negative would violate a documented policy. One-shot detection:
-
-  ```
-  grep -liE "co-authored-by" <reachable-CLAUDE-md-paths> 2>/dev/null | head -1
-  ```
+- **Skip the trailer** when any reachable `CLAUDE.md` forbids it. Detection: use the `Grep` tool (case-insensitive, `-i`) for the pattern `co-authored-by` across the workdir's `CLAUDE.md`, any ancestor `CLAUDE.md` walking up to `/`, and `~/.claude/CLAUDE.md` — any hit ⇒ skip the trailer (the HTML marker alone is sufficient). The heuristic is intentionally conservative — a false positive only omits a redundant trailer, while a false negative would violate a documented policy. One-shot detection: a single `Grep` call with `-i`, `pattern: "co-authored-by"`, scoped to the reachable `CLAUDE.md` paths; any match ⇒ skip the trailer.
 
 Never reset an issue that already has a `status:in-progress` or `status:in-review` label. Resume.
 

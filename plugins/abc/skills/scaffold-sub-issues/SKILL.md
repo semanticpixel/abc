@@ -16,7 +16,6 @@ allowed-tools:
   - mcp__claude_ai_Linear__save_issue
   - mcp__claude_ai_Linear__create_issue_label
   - mcp__claude_ai_Linear__get_issue
-  - mcp__claude_ai_Linear__list_users
 ---
 
 # /abc:scaffold-sub-issues — Convert PLAN(s) to Linear sub-issues

@@ -4,7 +4,6 @@ description: Scan all open PRs (GitHub) and MRs (GitLab) the user authored, tria
 argument-hint: "[github | gitlab | both]  (default: both)"
 model: opus
 allowed-tools:
-  - Skill
   - Agent
   - Read
   - Grep
@@ -21,6 +20,8 @@ allowed-tools:
   - Bash(git push:*)
   - Bash(git remote:*)
   - Bash(git branch:*)
+  - Bash(git rebase:*)
+  - Bash(git restore:*)
   - Bash(gh auth status:*)
   - Bash(gh search prs:*)
   - Bash(gh pr view:*)
@@ -28,11 +29,11 @@ allowed-tools:
   - Bash(gh pr checkout:*)
   - Bash(gh pr comment:*)
   - Bash(gh api:*)
+  - Bash(gh run view:*)
   - Bash(glab auth status:*)
   - Bash(glab mr list:*)
   - Bash(glab mr view:*)
   - Bash(glab mr checkout:*)
-  - Bash(glab mr note:*)
   - Bash(pnpm:*)
   - Bash(npm:*)
   - Bash(yarn:*)
@@ -42,7 +43,10 @@ allowed-tools:
   - mcp__gitlab__list_merge_request_diffs
   - mcp__gitlab__discussion_list
   - mcp__gitlab__discussion_add_note
-  - mcp__gitlab__discussion_resolve
+  - mcp__gitlab__list_merge_request_pipelines
+  - mcp__gitlab__list_pipeline_jobs
+  - mcp__gitlab__get_job
+  - mcp__gitlab__download_job_log
 ---
 
 # /abc:review-sweep — Bulk triage your open PRs and MRs
@@ -121,7 +125,7 @@ For PRs/MRs that came out of the rebase pre-pass **health-OK** (either no rebase
 
 1. **Fetch failing checks for the PR's head SHA.**
    - GitHub: `gh api /repos/<o>/<r>/commits/<sha>/check-runs --paginate` (filter `conclusion=failure`) plus `gh api /repos/<o>/<r>/commits/<sha>/status` for the legacy status API.
-   - GitLab: use the existing MCP tools to read pipeline job status for the MR's head commit.
+   - GitLab: read pipeline job status for the MR's head commit via `mcp__gitlab__list_merge_request_pipelines` → `mcp__gitlab__list_pipeline_jobs` (filter to `status=failed`); pull a failing job's detail with `mcp__gitlab__get_job` and its log with `mcp__gitlab__download_job_log`.
    - If there are no failing checks → mark health-OK, continue to Phase 2.
 2. **Classify each failing check** using the same language as `ship-issue/SKILL.md` § Phase 3 rows 3a/3b:
    - **`assertion-style`** — unit test, lint, type check, build, code-review-bot check-run with findings. Mechanical; a code fix in production code is plausible.

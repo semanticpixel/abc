@@ -12,7 +12,7 @@ allowed-tools:
   - Grep
   - Glob
   - AskUserQuestion
-  - Bash(git remote:*)
+  - Bash(git -C * remote get-url *)
   - Bash(gh auth status:*)
   - Bash(gh pr view:*)
   - Bash(gh pr list:*)

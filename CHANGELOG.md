@@ -15,6 +15,21 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-06-12
+
+### Changed
+
+- **Permission-grant alignment sweep across every skill** (PATCH — ST-1 of the plugin review remediation, no behavior change beyond eliminating permission prompts that stalled unattended `/loop` wakes): a mechanical pass over all 12 `SKILL.md` frontmatters so that every command a body mandates is covered by a grant, and no grant is left unreferenced.
+  - **`git -C <workdir> …` invocations now have matching grants.** `ship-issue`, `ship-issue-gh`, and `review-epic` derive the platform/branch via `git -C <workdir> remote get-url origin` (and `ship-issue[-gh]` via `git -C <workdir> log … --grep`), which the prefix grants `Bash(git remote:*)` / `Bash(git log:*)` never matched (`git -C` ≠ `git remote`). Added scoped `Bash(git -C * remote get-url *)` and `Bash(git -C * log *)` instead of a blanket `Bash(git -C:*)` (which would over-grant `git -C … push/reset`). The now-dead plain `Bash(git remote:*)` was dropped from `ship-issue` and `review-epic` (their only remote call is the `git -C` form); `ship-issue-gh` keeps it (its Phase 1 row-0 still uses plain `git remote get-url`).
+  - **`co-authored-by` detection switched from an ungranted `grep` to the granted `Grep` tool** in the `ship-issue` pair.
+  - **`gh --version` preflight removed** from `ship-issue-gh` and `scaffold-sub-issues-gh` (the command was never granted, and gh ≥ 2.40 dates to 2023): a failing `--json body` call is now treated as `blocked-user: gh-too-old-for-json-body` instead.
+  - **Tmpfile writes replaced with stdin heredocs** (`--body-file -`) in `ship-epic-gh` and `scaffold-sub-issues-gh` — no `Write` tool is granted in those skills, so the prior `--body-file <tmpfile>` couldn't have produced the file. The heredoc form stays inside the existing `gh issue …` grants.
+  - **`review-sweep` health pre-pass grants completed:** added `Bash(git rebase:*)`, `Bash(git restore:*)`, `Bash(gh run view:*)`, and the GitLab pipeline MCP tools (`list_merge_request_pipelines`, `list_pipeline_jobs`, `get_job`, `download_job_log`); the vague "use the existing MCP tools" line now names them.
+  - **`review` fallback comment path** rewritten from the ungranted `gh pr comment` to the already-granted `gh api -X POST /repos/<o>/<r>/issues/<n>/comments`.
+  - **`ship-epic-gh` PR discovery named explicitly** as `gh pr list --search <child-ref>` (already granted); the unreferenced `Bash(gh pr view:*)` was dropped.
+  - **Dropped unreferenced grants:** `AskUserQuestion` (`ship-issue`, `ship-issue-gh`, `ship-epic`, `ship-epic-gh` — autonomous loops, never prompt); `Bash(pwd:*)`/`Bash(ls:*)` (`ship-epic`, `review-epic-gh`); `Bash(gh issue list:*)` (`review-epic-gh`); `Bash(gh issue edit:*)` (`ship-epic-gh`); `Skill`, `Bash(glab mr note:*)`, `mcp__gitlab__discussion_resolve` (`review-sweep`); `mcp__claude_ai_Linear__get_issue` (`review`); `Bash(git pull:*)`/`Bash(git stash:*)`/`Bash(node:*)` (`pr` — `git fetch` kept for ST-9); `mcp__claude_ai_Linear__list_users` (`scaffold-sub-issues`); `Bash(gh api:*)` (`scaffold-sub-issues-gh`); `Bash(git log:*)` (`plan`).
+  - **`ship-issue/README.md` permissions JSON re-synced** with the new `git -C` grants and the previously-missing `mcp__claude_ai_Linear__list_milestones`.
+
 ## [0.9.1] - 2026-06-06
 
 ### Changed
