@@ -15,6 +15,18 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-06-13
+
+### Changed
+
+- **`ship-issue` + `ship-issue-gh` state-machine correctness sweep** (PATCH — ST-2 of the plugin review remediation, parent #47; body/DESIGN/README only, no frontmatter changes). The two sibling skills were kept in lockstep section-by-section; fixes differ only on tracker-specific lines (Linear MCP / state names vs GitHub `gh` / labels):
+  - **Invalid CLI / search forms fixed.** `gh pr checks` now uses the supported `--json name,state,bucket` (the `--json name,state,conclusion` form it never supported), and rows 3a/3b/4 classify on `bucket` (`fail`/`pass`/`pending`/`skipping`/`cancel`); the Linear sibling's CI vocabulary is aligned to the same conceptual schema (`glab` `failed`/`success`/`running`/`pending`). The bogus `gh pr list --search "linked:<n>"` qualifier is replaced by a union of `closedByPullRequestsReferences`, a `#<n> in:body` search, and a `<n>-` head-branch match. The fictional `gh issue list --search` cursor pagination for milestone >250 expansion is replaced with `gh api "/repos/<o>/<r>/issues?...&state=all" --paginate` (filtering `.pull_request==null`).
+  - **State table & escape-hatch correctness.** Added a terminal **row 0** (already-closed/canceled with no merged PR → skip in list context, `blocked-user: ticket-already-terminal` in single-ticket context, first-match-wins ahead of row 1). The failcount reset scan now reads the **latest** `failcount:<key>=N` comment per key (append-only comments made "any N>0" re-fire the reset forever). Added a stale-CI freshness guard (a failing check counts only against the current head SHA; older failures are treated as `pending`). Added behind-base detection to Phase 3 (`mergeStateStatus=BEHIND` / `glab` diverged counts) and wired it to the previously-unreachable rebase trigger.
+  - **Contradictions resolved.** CronDelete now fires on **all** halts (blocked-user, failed, all-merged) — the rebase-escalation rationale is reworded to "recoverable by re-running the command after resolving," not "cron stays armed." The @-mention triple-contradiction is settled in favor of the Phase 4 `fixing` handler as canonical (actionable → act; ambiguous/redirect/cancel → `blocked-user`); Phase 6/7 defer to it. The merge policy is now explicit ("this skill NEVER runs `gh pr merge` / `glab mr merge` — a human merges") with a one-time `<!-- ship-issue:note:merge-nudge -->` after 5 merge-ready `pr-open` wakes.
+  - **Validation gate hardened.** The `blocked-verify` template now includes the unlock instruction verbatim (`post a comment containing exactly <!-- ship-issue:verify:passed -->`, then re-run the command), and both READMEs document the marker. To stop the `Closes`-trailer / Linear-magic-close-word from racing the gate, `pending → implementing` step 7 uses `Refs <o>/<r>#<n>` (GitHub) / omits the magic close word (Linear) when the issue has a `## Validation` heading, so the worker drives the close after the gate passes.
+  - **Per-team & ordering fixes.** Linear state names are now resolved by `statusType` (`started`/`completed`/`canceled`/`unstarted`) at Phase 1 and cached, with default-name fallback — handlers reference the resolved-state variables instead of hardcoded "In Progress"/"In Review"/"Done"/"Canceled". A standalone `cancel` comment (case-insensitive, whole-body or first line) is now scanned in Phase 3 and triggers a terminal halt + CronDelete.
+  - **Reading-order & template fixes.** The escape-hatches phase is retitled **Phase 3.5: Escape hatches (run before handlers)** so execution order matches reading order (3 → 3.5 → 4); every internal "Phase 5" cross-reference was updated. The Phase 8 output contract uses a `<command-name>` placeholder in the `Next wake:` line instead of the literal command. The stale duplicated state table in `ship-issue/DESIGN.md` § Session-boundary behavior is replaced with a pointer to SKILL.md Phase 3 as the single source of truth, and `ship-issue/README.md`'s install section now uses the marketplace-install paragraph matching the GitHub sibling.
+
 ## [0.9.2] - 2026-06-12
 
 ### Changed
@@ -233,6 +245,7 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
 [Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.5...HEAD
+[0.9.3]: https://github.com/semanticpixel/abc/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/semanticpixel/abc/compare/v0.9.1...v0.9.2
 [0.7.5]: https://github.com/semanticpixel/abc/releases/tag/v0.7.5
 [0.7.4]: https://github.com/semanticpixel/abc/releases/tag/v0.7.4
