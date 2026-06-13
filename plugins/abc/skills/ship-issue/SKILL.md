@@ -22,9 +22,10 @@ allowed-tools:
   - Bash(git add:*)
   - Bash(git commit:*)
   - Bash(git push:*)
-  - Bash(git remote:*)
   - Bash(git branch:*)
   - Bash(git rebase:*)
+  - Bash(git -C * remote get-url *)
+  - Bash(git -C * log *)
   - Bash(gh pr:*)
   - Bash(gh api:*)
   - Bash(gh auth status:*)
@@ -40,7 +41,6 @@ allowed-tools:
   - Bash(npx:*)
   - Bash(yarn:*)
   - Bash(node:*)
-  - AskUserQuestion
   - mcp__claude_ai_Linear__get_issue
   - mcp__claude_ai_Linear__list_issues
   - mcp__claude_ai_Linear__save_issue
@@ -221,11 +221,7 @@ If neither marker exists on the branch, treat **all** open review comments as ne
 
 - **Always** include a `<!-- ship-issue:commit -->` HTML comment line in the commit body. Anchors the Phase 3 lookup above and is scoped under the existing `<!-- ship-issue:* -->` namespace.
 - **By default**, also include a `Co-Authored-By: Claude <noreply@anthropic.com>` trailer (exact string) for backward-compat with historical skill-commit detection.
-- **Skip the trailer** when any reachable `CLAUDE.md` forbids it. Detection: case-insensitive grep for `co-authored-by` across the workdir's `CLAUDE.md`, any ancestor `CLAUDE.md` walking up to `/`, and `~/.claude/CLAUDE.md` — any hit ⇒ skip the trailer (the HTML marker alone is sufficient). The heuristic is conservative on purpose: a false positive only omits a redundant trailer, while a false negative would violate a documented policy. One-shot detection:
-
-  ```
-  grep -liE "co-authored-by" <reachable-CLAUDE-md-paths> 2>/dev/null | head -1
-  ```
+- **Skip the trailer** when any reachable `CLAUDE.md` forbids it. Detection: use the `Grep` tool (case-insensitive, `-i`) for the pattern `co-authored-by` across the workdir's `CLAUDE.md`, any ancestor `CLAUDE.md` walking up to `/`, and `~/.claude/CLAUDE.md` — any hit ⇒ skip the trailer (the HTML marker alone is sufficient). The heuristic is conservative on purpose: a false positive only omits a redundant trailer, while a false negative would violate a documented policy. One-shot detection: a single `Grep` call with `-i`, `pattern: "co-authored-by"`, scoped to the reachable `CLAUDE.md` paths; any match ⇒ skip the trailer.
 
 Never reset a ticket that Linear shows as In Progress or In Review. Resume.
 

@@ -19,7 +19,6 @@ allowed-tools:
   - mcp__gitlab__discussion_new_with_position
   - mcp__gitlab__discussion_new
   - mcp__gitlab__discussion_list
-  - mcp__claude_ai_Linear__get_issue
 ---
 
 # /review
@@ -235,7 +234,7 @@ gh api -X POST /repos/<owner>/<repo>/pulls/<number>/comments \
 
 Pass `body` via HEREDOC if it contains newlines or backticks (suggestion blocks).
 
-**Fallback**: if a positional comment fails (stale diff, line out of range), post as a general PR comment via `gh pr comment <number> --body "**<path>:<line>** — <body>"`.
+**Fallback**: if a positional comment fails (stale diff, line out of range), post as a general PR comment via the already-granted `gh api` (PR-level comments use the issues-comments endpoint): `gh api -X POST /repos/<owner>/<repo>/issues/<number>/comments -f body="**<path>:<line>** — <body>"`.
 
 ### GitLab branch
 

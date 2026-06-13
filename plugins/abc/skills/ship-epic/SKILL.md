@@ -8,9 +8,6 @@ allowed-tools:
   - CronList
   - CronDelete
   - Read
-  - AskUserQuestion
-  - Bash(pwd:*)
-  - Bash(ls:*)
   - mcp__claude_ai_Linear__get_issue
   - mcp__claude_ai_Linear__list_issues
   - mcp__claude_ai_Linear__save_issue

@@ -18,7 +18,6 @@ allowed-tools:
   - Bash(gh issue create:*)
   - Bash(gh issue edit:*)
   - Bash(gh issue list:*)
-  - Bash(gh api:*)
 ---
 
 # /abc:scaffold-sub-issues-gh — Convert PLAN(s) to GitHub Issues
@@ -54,7 +53,7 @@ Read all selected plan files in full. Concatenate them in the order provided (Ph
 
 **Auth pre-flight.** Run `gh auth status`. If not authed for the target host (`github.com` by default, or a GitHub Enterprise host if the hub repo's URL indicates one), halt with the exact re-auth command. Don't attempt issue creation against unauthed hosts.
 
-**`gh` version check.** `gh --version` must be `>= 2.40` for reliable `--json body` support on `gh issue view`. Halt with an upgrade message if older.
+**`gh` capability.** This skill relies on `--json body` support on `gh issue view`. No proactive `gh --version` probe — if a `gh issue view ... --json body` call fails because the flag is unsupported (very old `gh`), halt with reason `gh-too-old-for-json-body` and the upgrade command.
 
 ### Phase 1: Parse the plan structure
 
@@ -223,12 +222,12 @@ If "Edit before creating" — wait for user input, re-render the preview, re-ask
 ### Phase 5: Create labels, parent (if needed), then sub-issues sequentially
 
 1. **Missing labels first.** For each approved missing label, call `gh label create <name> --repo <target-repo> --color <hex> --description <text>`. Use the color scheme from `github-conventions.md`. Run per-repo (don't batch across repos — `gh label create` is per-repo).
-2. **Parent (new-parent mode only).** Build the body with the `## Sub-issues` block containing **placeholder lines** (we'll patch in real numbers after Phase 5.3). Call `gh issue create --repo <hub> --title <T> --body-file <tmpfile> --label <comma-list>`. Capture the parent's issue number from the URL the command prints.
+2. **Parent (new-parent mode only).** Build the body with the `## Sub-issues` block containing **placeholder lines** (we'll patch in real numbers after Phase 5.3). Pipe the body on stdin (no `Write` tool — `--body-file -` reads stdin, stays inside the `gh issue create` grant): `gh issue create --repo <hub> --title <T> --body-file - --label <comma-list> <<'EOF'` … body … `EOF`. Capture the parent's issue number from the URL the command prints.
 3. **Sub-issues, sequentially.** For each sub-task in plan order:
    - Build the description: `## Scope`, `## Acceptance criteria`, plus the `## Validation` block on the chosen gate sub-issue, plus a `Parent: <hub>/<parent-num>` trailer.
-   - Call `gh issue create --repo <target-repo> --title <T> --body-file <tmpfile> --label "repo:<name>"`. **Wait for the response before issuing the next call.** Capture the new number from the URL.
+   - Call `gh issue create --repo <target-repo> --title <T> --body-file - --label "repo:<name>" <<'EOF'` … description … `EOF` (body piped on stdin, same `--body-file -` pattern as the parent). **Wait for the response before issuing the next call.** Capture the new number from the URL.
    - Build the ST-N → `<owner>/<repo>#<n>` map.
-4. **Patch the parent body.** Re-fetch (`gh issue view <parent-num> --repo <hub> --json body`), replace the placeholder lines between the fence markers with real `- [ ] <ref> — <title>` lines (use `#<n>` for same-repo, `<owner>/<repo>#<n>` for cross-repo), then `gh issue edit <parent-num> --repo <hub> --body-file <tmpfile>`. In append mode, *insert* new lines after the existing block contents (don't touch the existing lines).
+4. **Patch the parent body.** Re-fetch (`gh issue view <parent-num> --repo <hub> --json body`), replace the placeholder lines between the fence markers with real `- [ ] <ref> — <title>` lines (use `#<n>` for same-repo, `<owner>/<repo>#<n>` for cross-repo), then pipe the patched body on stdin: `gh issue edit <parent-num> --repo <hub> --body-file - <<'EOF'` … body … `EOF`. In append mode, *insert* new lines after the existing block contents (don't touch the existing lines).
 5. **Wire dependency labels.** For each sub-issue with `blocks: [ST-X, ST-Y]`:
    - Compute the labels: `blocks:#<X-resolved>` and `blocks:#<Y-resolved>` (use the resolved per-repo number; cross-repo `blocks` uses `blocks:<owner>/<repo>#<n>` form).
    - Create the labels if they don't exist yet (`gh label create` per target repo). These are per-edge — fine to accumulate; they're cheap.

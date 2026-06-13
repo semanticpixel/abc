@@ -11,7 +11,6 @@ allowed-tools:
   - Bash(git log:*)
   - Bash(git diff:*)
   - Bash(git fetch:*)
-  - Bash(git pull:*)
   - Bash(git checkout:*)
   - Bash(git switch:*)
   - Bash(git add:*)
@@ -19,7 +18,6 @@ allowed-tools:
   - Bash(git push:*)
   - Bash(git remote:*)
   - Bash(git branch:*)
-  - Bash(git stash:*)
   - Bash(gh pr:*)
   - Bash(gh auth status:*)
   - Bash(gh repo view:*)
@@ -30,7 +28,6 @@ allowed-tools:
   - Bash(npm:*)
   - Bash(npx:*)
   - Bash(yarn:*)
-  - Bash(node:*)
   - Bash(pwd:*)
   - Bash(ls:*)
 ---
