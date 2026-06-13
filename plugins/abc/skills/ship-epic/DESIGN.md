@@ -70,7 +70,7 @@ For each sub-issue:
 - Resolve `repo:` label → workdir (Phase 1 of `/ship-issue`)
 - Detect platform (github / gitlab) from the workdir's remote
 
-Detect cycles → `blocked-user` on parent. Halt.
+Detect cycles via DFS. On cycle → **Phase 5 § Dependency cycle (terminal)**: refuse to fire any workers; Phase 5 writes the deduped `<!-- ship-epic:event:cycle -->` marker, `CronDelete`s the loop, and halts. Do not write the marker or fire workers here.
 
 ### Phase 2: Classify each sub-issue
 
@@ -78,9 +78,9 @@ State derivation (first match wins) — kept in sync with SKILL.md Phase 2 (the 
 
 | State | Condition |
 |---|---|
-| `merged` | `statusType=completed` AND a `<!-- ship-issue:event:merged -->` marker exists — OR `statusType=completed` with **no** `event:merged` marker and **no** linked PR/MR (human marked it Done directly; treat as done) |
+| `merged` | `statusType=completed` AND a `<!-- ship-issue:event:merged -->` marker exists — OR `statusType=completed` with **no** `event:merged` marker and **no** linked PR/MR **and no `## Validation` heading** (human marked it Done directly; treat as done — a `## Validation`-gated issue is excluded from this arm so it falls through rather than skipping the verify gate) |
 | `failed` | A `<!-- ship-issue:event:failed -->` marker from the worker exists |
-| `blocked-user` | Latest `<!-- ship-issue:event:blocked -->` marker is **not postdated** by a human (non-skill) comment or a `<!-- ship-issue:verify:passed -->` marker. (There is **no** `event:resumed` marker — a blocked child resumes by the coordinator re-firing its worker once a human reply / verify marker postdates the blocked marker; see Re-fire on human reply.) |
+| `blocked-user` | `statusType` is neither `completed` nor `canceled` (a blocked-then-canceled child falls through to `dropped (human-canceled)`), AND the latest `<!-- ship-issue:event:blocked -->` marker is **not postdated** by a human (non-skill) comment or a `<!-- ship-issue:verify:passed -->` marker. (There is **no** `event:resumed` marker — a blocked child resumes by the coordinator re-firing its worker once a human reply / verify marker postdates the blocked marker; see Re-fire on human reply.) |
 | `external-blocker` | A `blocked by` relation points outside the sub-issue set AND that issue isn't merged. Recorded **only** in the epic's `<!-- ship-epic:status -->` comment — never as a comment on the sub-issue |
 | `in-flight` | A `CronList` entry matches the worker cron-match rule for `<SUB-ID>` (the namespace-aware `(?:[A-Za-z][A-Za-z0-9_-]*:)?ship-issue <SUB-ID>` key — same string as the Phase 3 fire string) |
 | `dropped (human-canceled)` | `statusType=canceled` but **no** `event:failed` marker (human canceled directly — not a worker failure). Surface as `dropped (human-canceled)`; does **not** halt the epic |
