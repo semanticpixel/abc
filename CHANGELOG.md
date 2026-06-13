@@ -15,6 +15,21 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-06-13
+
+### Changed
+
+- **`ship-epic` + `ship-epic-gh` coordinator correctness sweep** (PATCH — ST-3 of the plugin review remediation, parent #47; SKILL/DESIGN prose + `ship-epic` `argument-hint` only, no `allowed-tools` changes). The two sibling coordinators were kept in lockstep section-by-section; fixes differ only on tracker-specific lines (Linear MCP / relations / state names vs GitHub `gh` / labels / task-list):
+  - **In-flight match never matched the coordinator's own workers.** The fire string is plugin-namespaced (`/abc:ship-issue[-gh] <id>`) but the `in-flight` classification grepped the bare `/ship-issue[-gh] <id>`, so the coordinator never recognized its own running workers and duplicate-fired every wake. The Phase 3 fire string and the Phase 2 `in-flight` match key are now defined **once** as the same namespace-aware regex (`(?:[A-Za-z][A-Za-z0-9_-]*:)?ship-issue[-gh] <id>`, GitHub-ID boundary class on the `-gh` side) and referenced from both. The worker command is **derived** from the captured coordinator `<command-name>` (`ship-epic`→`ship-issue`, namespace preserved) — no more hardcoded `/abc:` fire strings.
+  - **Phantom `event:resumed` removed.** No worker ever writes `<!-- ship-issue:event:resumed -->`. The `blocked-user` classification now keys on whether a human (non-skill) comment or a `<!-- ship-issue:verify:passed -->` marker **postdates** the latest `event:blocked` marker — if so the child is **re-fireable** (classify `ready` when blockers are satisfied); re-firing the worker is how a blocked child resumes. Documented in both SKILL.md and DESIGN.md.
+  - **gh `merged` row no longer bypasses the validation gate.** `state=closed AND stateReason=completed` now additionally requires the worker's `<!-- ship-issue:event:merged -->` marker, plus `<!-- ship-issue:verify:passed -->` when the child body has a `## Validation` heading. A closed-completed child lacking the merged marker isn't classified `merged` yet (the worker may still be finishing the gate).
+  - **Cycle path terminates.** A detected dependency cycle is now an explicit Phase 5 terminal — write `<!-- ship-epic:event:cycle -->` once (deduped against an identical prior marker), `CronDelete` the epic's own loop, halt. The user-mention-ambiguous halt path also gained an explicit `CronDelete`.
+  - **Classification can't fall through silently.** Linear gains a manually-Done row (`statusType=completed`, no `event:merged` marker, no PR/MR → `merged`); both coordinators gain a final catch-all (`blocked-user: unclassifiable-child`). A human-canceled child (closed/canceled **without** the worker's `event:failed` marker) is now `dropped (human-canceled)` — surfaced and continued, **not** an epic-halting failure (only a real worker `event:failed` halts).
+  - **Read-failure + single-session rules added (mirrors the workers).** Any failed read → skip classifying that child this wake (don't fall through to a wrong state); parent unreadable on consecutive wakes → `CronDelete` + halt. First-wake single-session constraint: a foreign `<!-- ship-epic:status -->` comment → `blocked-user: possible-duplicate-coordinator`; a live `ship-issue[-gh] <PARENT-ID>` serial-walker cron → refuse with `parent-already-serial-walked`.
+  - **Kill-targeting + `external-blocker` tightened.** The failed-path worker-kill now references the namespace-aware cron-match rule, and appends a **non-marker** informational comment to each killed child (so it isn't mistaken for a worker event). `external-blocker` is one consistent state name, recorded only in the epic's status comment, never on the child.
+  - **Linear-only fixes.** `milestone:` args are now **rejected** (pointed at `/abc:ship-issue milestone:<uuid>`, mirroring `-gh`); `argument-hint` drops `milestone:`; the "is milestone-mode useful?" question moved to DESIGN.md. The parent-already-Done early exit (print summary, no loop, no comment) now mirrors `-gh`. The Phase 4 status-comment example drops the undefined `ST` column to match the `-gh` example (State | Sub-issue | Latest).
+  - **Stale `ship-epic/DESIGN.md` refreshed.** "Not a committed skill yet" banner replaced; the install path moved from `~/.claude/skills/` to the marketplace layout; the state table synced with the corrected SKILL.md Phase 2 (including `external-blocker`, `dropped (human-canceled)`, catch-all, manually-Done rows).
+
 ## [0.9.3] - 2026-06-13
 
 ### Changed
@@ -245,6 +260,7 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
 [Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.5...HEAD
+[0.9.4]: https://github.com/semanticpixel/abc/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/semanticpixel/abc/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/semanticpixel/abc/compare/v0.9.1...v0.9.2
 [0.7.5]: https://github.com/semanticpixel/abc/releases/tag/v0.7.5
