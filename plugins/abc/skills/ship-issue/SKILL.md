@@ -161,14 +161,14 @@ For **each** item in the list — including each sub-issue when the input was a 
 
 **Cache** the resolved `{workdir, platform, cli}` tuple per ticket for this invocation. Re-resolution on the next `/loop` wake is cheap and handles the case where the user added/removed a label mid-flight.
 
-**Resolve the team's workflow-state names by `statusType`.** Linear teams can rename their workflow states ("In Progress" → "Building", "Done" → "Shipped", etc.), so the skill must not hardcode the default names. From the ticket's team (the `state` objects on the issue, or the team's workflow states via the MCP), resolve and cache the **per-team state name** for each `statusType` the handlers need:
+**Resolve the team's workflow-state names by `statusType`.** Linear teams can rename their workflow states ("In Progress" → "Building", "Done" → "Shipped"), **and the default workflow has two `started`-type states — `In Progress` and `In Review` — that `statusType` alone cannot tell apart.** `get_issue` returns only the ticket's *current* state, not the team's full state list, so build the map from the team's states: call `mcp__claude_ai_Linear__list_issues` scoped to the ticket's team and collect the **distinct `state` objects** seen (each carries `name`, `statusType`/`type`, and `position`). Group by `statusType` and resolve + cache:
 
-- `started` → the in-progress state name (default `In Progress`)
-- `started` (review sub-state, if the team has a distinct one) → the in-review state name (default `In Review`)
-- `completed` → the done state name (default `Done`)
-- `canceled` → the canceled state name (default `Canceled`)
+- `started`, **lower `position`** → the working/in-progress state name (default `In Progress`) → `resolved_started_state`
+- `started`, **higher `position`** → the review state name (default `In Review`) → `resolved_in_review_state` — this `position`-based split is what disambiguates the two `started` states; if the team has only one `started` state, both roles map to it
+- `completed` → the done state name (default `Done`) → `resolved_completed_state`
+- `canceled` → the canceled state name (default `Canceled`) → `resolved_canceled_state`
 
-Fall back to the default name when the team uses the defaults or no distinct state is resolvable. Phase 3's row 0/row 5 and Phase 4's handlers reference these **resolved-state variables**, not the literal strings.
+Fall back to the default name for any role not resolvable (team uses the defaults, `position` not exposed by the MCP, or no distinct state exists). Phase 3's row 0/row 5 and Phase 4's handlers reference these **resolved-state variables** (`resolved_started_state` / `resolved_in_review_state` / `resolved_completed_state` / `resolved_canceled_state`), not the literal strings.
 
 ## Phase 2: Pick the next item
 
@@ -296,7 +296,7 @@ Same as `pending → implementing` but:
 **This skill NEVER runs `gh pr merge` / `glab mr merge` — a human merges.** The skill drives the PR/MR to green-and-reviewed and then waits; the final merge is always a human action.
 
 1. Print a one-line "still waiting" summary: the PR URL, the last skill-commit SHA, and the timestamp.
-2. **Merge-nudge (idempotent, one-time).** If the PR/MR has been **green-but-unmerged with review addressed** (all checks in the passing/neutral buckets, no unresolved review comments) for **N=5 consecutive `pr-open` wakes** (~30 min at the 6-minute cadence), and no `<!-- ship-issue:note:merge-nudge -->` marker comment already exists on the ticket, post one marker-only Linear comment: `<!-- ship-issue:note:merge-nudge -->` (body is the marker plus the one-line "PR green & review addressed — ready to merge"). The marker's own presence makes this a no-op on every later wake, so it never re-posts.
+2. **Merge-nudge (idempotent, one-time).** If the PR/MR is **green-but-unmerged with review addressed** (all checks in the passing/neutral buckets, no unresolved review comments) **and the last skill commit is older than ~30 minutes** — use the `%ai` timestamp from the Phase 3 "last skill commit" lookup; the skill is stateless and keeps **no per-wake counter**, so the age of that commit (not a count of `pr-open` wakes) is the durable, re-run-safe trigger — and no `<!-- ship-issue:note:merge-nudge -->` marker comment already exists on the ticket, post one marker-only Linear comment: `<!-- ship-issue:note:merge-nudge -->` (body is the marker plus the one-line "PR green & review addressed — ready to merge"). The marker's own presence makes this a no-op on every later wake, so it never re-posts.
 3. Return — the `/loop` harness will wake again in 6 minutes.
 
 Do **not** push new commits, re-classify, re-evaluate CI state, or merge here. All classification lives in Phase 3; if a CI check flips to failure between wakes, the next wake's Phase 3 will derive `fixing` (row 3a) or `blocked-user` (row 3b).
