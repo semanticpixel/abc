@@ -121,7 +121,7 @@ The legacy `Co-Authored-By: Claude` trailer is retained as a **fallback** in the
 
 The key format is `github:<check-name>` — the Linear sibling uses `<platform>:<check-name>` because Linear can drive both GitHub and GitLab checks, but here every check is a GitHub check-run name. Dropping the platform prefix would make migration ambiguous if the Linear sibling ever needed to read this skill's markers (it doesn't, but the cost of the prefix is one extra `github:` per comment).
 
-The reset scan, increment-after-success-signal, and `N+1 >= 3 → failed` logic are identical to the Linear sibling. See `../ship-issue/DESIGN.md` § Phase 5.
+The reset scan, increment-after-success-signal, and `N+1 >= 3 → failed` logic are identical to the Linear sibling. See `../ship-issue/SKILL.md` § Phase 3.5 (Escape hatches) — the single source of truth for the three-strikes counter.
 
 ## Branch derivation
 
