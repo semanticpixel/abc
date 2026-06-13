@@ -165,11 +165,11 @@ On terminal state (all items `merged`, any item `blocked-user` or `failed`), the
 The loop halts when any of:
 
 - All input tickets reach `merged`.
-- Any ticket enters `blocked-user` (skill surfaces state + Slack ping; user resumes).
+- Any ticket enters `blocked-user` (skill surfaces state + Slack ping; user resumes by re-running the command).
 - Any ticket enters `failed`.
-- User cancels (mechanism TBD in A.2 — candidates: Ctrl-C, `/ship-issue-stop`, or a `cancel` Linear comment).
+- User cancels via a standalone `cancel` Linear comment (case-insensitive, whole-comment-body or first line) — Phase 3's cancel scan detects it and derives `failed: cancel-requested`. (`/loop cancel` remains the manual override.)
 
-In every terminal case the skill calls `CronDelete` on its own loop entry, identified via the [cron-entry match rule](#cron-entry-match-rule) defined under Self-arming. The `/loop` cron stops immediately — the user doesn't have to run `/loop cancel` manually.
+In every terminal case — `merged`, `blocked-user`, and `failed` alike — the skill calls `CronDelete` on its own loop entry, identified via the [cron-entry match rule](#cron-entry-match-rule) defined under Self-arming. **CronDelete fires on all halts**, including `blocked-user`: the `/loop` cron stops immediately and the user doesn't have to run `/loop cancel` manually; re-running `/ship-issue <same-arg>` after resolving is what re-arms it.
 
 ## Blocked-user triggers
 
@@ -179,7 +179,7 @@ The skill stops and asks, it doesn't guess, when:
 - **Same code-review-bot rule ID / finding-name** appears twice in a row after a fix commit — not the same severity or category, the same *named rule*. If the rule code-review-bot fires is identical after a fix attempt, the fix didn't address the underlying issue and it's likely a design problem the skill can't patch away. (Rule ID is the most precise class definition; severity alone would over-trigger, category alone would under-trigger.)
 - CI fails in a non-test-assertion way (env, secrets, deps).
 - Rebase against `main` produces conflict markers, or post-rebase gates fail. Both escalate as `blocked-user` (recoverable), not `failed`. See SKILL.md § Rebase against base — attempt-and-gate.
-- User @-mentions Claude on the PR.
+- An **ambiguous, or a redirect/cancel @-mention** of Claude on the PR. **Actionable** @-mentions are handled in the `fixing` handler (canonical); not every @-mention halts.
 - Any of the repo-discovery conditions listed under "Platform and repo discovery" (missing/multiple `repo:` labels, unresolvable `<name>`, unknown platform).
 
 ## blocked-verify triggers
@@ -204,21 +204,9 @@ The skill now anchors detection on an `<!-- ship-issue:commit -->` HTML comment 
 
 The legacy `Co-Authored-By: Claude` trailer is retained as a **fallback** in the Phase 3 lookup so historical commits (already merged or in-flight before the marker landed) continue to be detected. Phase 4 commit handlers write **both** markers by default and drop the trailer only when any reachable `CLAUDE.md` (workdir's, any ancestor walking up to `/`, or `~/.claude/CLAUDE.md`) contains a case-insensitive mention of `Co-Authored-By` — a coarse heuristic that catches "never include `Co-Authored-By`" policies without prose parsing. The conservative bias is intentional: a false positive only omits a redundant trailer (the HTML marker still anchors detection); a false negative would violate a documented policy.
 
-On every invocation the skill:
+On every invocation the skill re-derives the state-machine state from the tracker + git host, resumes from it, and never resets a ticket that's already in a `started`-type state.
 
-1. Looks up each ticket's current Linear state, all linked PRs (open and closed), and any ship-issue Linear comments it previously wrote.
-2. Derives the state-machine state using these rules, in order:
-
-   | Condition | Derived state |
-   |---|---|
-   | Merged PR exists | `merged` |
-   | Closed PR (not merged) exists for this ticket | **`failed`** — surface the closed-PR URL and halt. Do not re-create. |
-   | Open PR exists with unaddressed review comments since last skill commit | `fixing` |
-   | Open PR exists, no new comments | `pr-open` |
-   | No PR has ever existed, ticket is In Progress/In Review | `implementing` (resume) |
-   | No PR, no prior activity | `pending` |
-
-3. Resumes from derived state. Never resets a ticket that's already In Progress or In Review.
+> **State-derivation rules are the single source of truth in SKILL.md Phase 3** (the ordered first-match-wins state table, including the terminal row 0 and the `blocked-verify` row 1a). They are intentionally **not** duplicated here — an earlier copy of the table in this section drifted from Phase 3 and gave contradictory derivations. Read SKILL.md § Phase 3 for the authoritative table.
 
 Closing the terminal mid-loop is safe: re-running `/ship-issue <same-arg>` picks up where it left off. No persistent local state to corrupt.
 
@@ -237,16 +225,24 @@ Closing the terminal mid-loop is safe: re-running `/ship-issue <same-arg>` picks
 ### Soft stops (→ `blocked-user`, loop pauses)
 
 - Scope-creep review comment.
-- Rebase against `main` produces conflict markers (`blocked-user: rebase-needs-human`), or post-rebase gates fail (`blocked-user: rebase-clean-but-tests-failed`). Mechanical rebase trouble is recoverable — the cron stays armed, the human nudges, the worker continues. See SKILL.md § Rebase against base — attempt-and-gate.
+- Rebase against `main` produces conflict markers (`blocked-user: rebase-needs-human`), or post-rebase gates fail (`blocked-user: rebase-clean-but-tests-failed`). Mechanical rebase trouble is recoverable by re-running `/abc:ship-issue <same-arg>` after the human resolves and pushes — the `blocked-user` halt itself CronDeletes the loop (CronDelete fires on all halts), so the re-run re-arms it. See SKILL.md § Rebase against base — attempt-and-gate.
 - Direct user message interrupting the loop → skill reads it and changes course or asks for clarification.
 
 ## What the skill does NOT do
 
-- Merge a PR without at least one green signal (human approval, or CI + code-review-bot both green on a non-blocking review).
+- **Merge.** The skill **never** runs `gh pr merge` / `glab mr merge` — a human merges. The skill drives the PR/MR to green-and-reviewed and waits; after the PR has been green-but-unreviewed-merge-ready for N=5 consecutive `pr-open` wakes it posts a one-time `<!-- ship-issue:note:merge-nudge -->` marker comment, then keeps waiting. The final merge action is always human.
 - Merge when `## Validation` exists and verification hasn't succeeded.
 - Silently absorb review comments as scope additions.
 - Retry transient failures without surfacing them.
 - Modify or weaken tests to pass. If a test is wrong, that's a new ticket.
+
+## Known design tensions
+
+### `Closes` / Linear-magic-close-word races the `blocked-verify` gate on validation-gated tickets
+
+Phase 4's `pending → implementing` step 7 links the PR/MR to the issue. If that link uses a magic close word (`Closes PROJ-88` on GitHub, or Linear's auto-complete-on-merge Magic URL), the tracker auto-completes the issue **on merge** — *before* the next worker wake runs. Phase 3 row 1a is designed to catch the merge and derive `blocked-verify` when the ticket carries a `## Validation` heading and no `<!-- ship-issue:verify:passed -->` comment, but by then the issue is already in its done state and any dashboard treats it as shipped; the validation steps land as a post-mortem rather than a gate.
+
+**Resolution (now in the skill, not a manual workaround):** Phase 4 step 7 detects the `## Validation` heading (same heading-match rule as row 1a) and, when present, **omits the magic close word** — using a non-closing reference (`Refs <owner>/<repo>#<n>` on the GitHub sibling; a plain `Linear: <issue-url>` line here) so the worker controls the close. The `merged` handler transitions the ticket to the done state itself, only after the `blocked-verify` gate passes. (This mirrors the GitHub sibling's `Refs`-vs-`Closes` fix.)
 
 ## Decisions locked in this doc
 
@@ -263,13 +259,13 @@ Don't re-litigate in the implementation ticket without a new round of architect 
 9. **Per-item `repo:` label resolution**: for each item (single ticket, list item, or sub-task), at most one `repo:<name>` label is resolved to a subdirectory of cwd. Zero labels falls back to the cwd git repo (blocked-user only when cwd is not inside a git repo). Multiple labels are blocked. No config file, no auto-inference from title/paths.
 10. **Skill-commit marker is HTML-comment-primary, trailer-fallback.** Commits always write the `<!-- ship-issue:commit -->` HTML marker; the `Co-Authored-By: Claude` trailer is added by default but dropped when any reachable `CLAUDE.md` mentions `Co-Authored-By`. Phase 3's lookup checks the HTML marker first and falls back to the trailer for historical commits made before this scheme landed.
 11. **Cron-entry match via captured `<command-name>` + permissive regex fallback.** Phase 0.5's self-arm check reads the slash-command name Claude Code injects at invocation time (e.g. `/abc:ship-issue`) and uses it verbatim in both the cron arming string and the subsequent match check. A permissive regex (`(?:[A-Za-z][A-Za-z0-9_-]*:)?ship-issue`) is the fallback for environments where `<command-name>` isn't reachable. This fixes a real-world correctness bug where hardcoding `/ship-issue` failed to match plugin-namespaced cron entries and caused every wake to duplicate-arm.
-12. **Rebase against base is attempt-and-gate; mechanical failures escalate to `blocked-user`, not `failed`.** Prior versions had a single hard-stop: any non-trivial rebase failure → `failed: rebase-conflict-needs-human`. That was too brittle for parallel epic runs where most conflicts are textual (parallel workers add imports to the same file, JSX elements to the same component, etc.) and resolvable by git's three-way merge. New rule: attempt `git rebase origin/<base>`, then run the project's local gates, and only escalate on (a) conflict markers (`blocked-user: rebase-needs-human`) or (b) red gates after a clean rebase (`blocked-user: rebase-clean-but-tests-failed`). Semantic shift: `failed` is reserved for self-cheating and hard correctness walls; mechanical rebase trouble is recoverable so the cron stays armed. The self-cheating hard stop still applies *inside* the auto-resolve flow — a clean rebase that only goes green by deleting an assertion is the cheat, not the fix. The legacy `rebase-conflict-needs-human` reason string is removed.
+12. **Rebase against base is attempt-and-gate; mechanical failures escalate to `blocked-user`, not `failed`.** Prior versions had a single hard-stop: any non-trivial rebase failure → `failed: rebase-conflict-needs-human`. That was too brittle for parallel epic runs where most conflicts are textual (parallel workers add imports to the same file, JSX elements to the same component, etc.) and resolvable by git's three-way merge. New rule: attempt `git rebase origin/<base>`, then run the project's local gates, and only escalate on (a) conflict markers (`blocked-user: rebase-needs-human`) or (b) red gates after a clean rebase (`blocked-user: rebase-clean-but-tests-failed`). Semantic shift: `failed` is reserved for self-cheating and hard correctness walls; mechanical rebase trouble is **recoverable by re-running `/abc:ship-issue <same-arg>` (or `/abc:ship-issue-gh <same-arg>`) after resolving** — not by the cron staying armed. **CronDelete fires on ALL halts** (blocked-user, failed, all-merged): a `blocked-user` halt cancels the loop just like the terminal states, so re-running the command after the human resolves the conflict is what re-arms it. The self-cheating hard stop still applies *inside* the auto-resolve flow — a clean rebase that only goes green by deleting an assertion is the cheat, not the fix. The legacy `rebase-conflict-needs-human` reason string is removed.
 
 ## Open questions for the implementation ticket
 
 These are implementation choices, not architecture:
 
-1. **Cancellation mechanism.** Ctrl-C, `/ship-issue-stop`, Linear comment `cancel`, or multiple? Pick one that maps cleanly to how `/loop` currently handles stops.
+1. ~~**Cancellation mechanism.**~~ **Resolved:** a standalone `cancel` Linear comment (case-insensitive, whole-comment-body or first line) is scanned in Phase 3 and derives `failed: cancel-requested` → CronDelete. `/loop cancel` stays as the manual override.
 2. **Linear status updates.** Does the skill write status transitions, or just read? Recommendation: write on `implementing`, `pr-open`, `merged` so there's an audit trail. Verify which status updates don't trigger unwanted Linear notifications.
 3. **PR ↔ Linear linking.** Use Linear's Magic URL format in the PR description so the issue auto-transitions? (Likely yes — free audit trail.)
 4. **Sub-issue discovery.** Which Linear MCP call returns a parent's sub-issues in order? Smoke-test in A.2.

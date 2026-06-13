@@ -161,6 +161,15 @@ For **each** item in the list — including each sub-issue when the input was a 
 
 **Cache** the resolved `{workdir, platform, cli}` tuple per ticket for this invocation. Re-resolution on the next `/loop` wake is cheap and handles the case where the user added/removed a label mid-flight.
 
+**Resolve the team's workflow-state names by `statusType`.** Linear teams can rename their workflow states ("In Progress" → "Building", "Done" → "Shipped", etc.), so the skill must not hardcode the default names. From the ticket's team (the `state` objects on the issue, or the team's workflow states via the MCP), resolve and cache the **per-team state name** for each `statusType` the handlers need:
+
+- `started` → the in-progress state name (default `In Progress`)
+- `started` (review sub-state, if the team has a distinct one) → the in-review state name (default `In Review`)
+- `completed` → the done state name (default `Done`)
+- `canceled` → the canceled state name (default `Canceled`)
+
+Fall back to the default name when the team uses the defaults or no distinct state is resolvable. Phase 3's row 0/row 5 and Phase 4's handlers reference these **resolved-state variables**, not the literal strings.
+
 ## Phase 2: Pick the next item
 
 Walk the list in order. For each item, derive its current state (Phase 3). The skill works on **one ticket at a time** — serialisation is deliberate (see `DESIGN.md` → open questions on stacked PRs; v1 is serial).
@@ -174,13 +183,15 @@ Skip items already in `merged`. Work the first non-terminal item. If any item is
 Gather, for the current ticket:
 
 - Ticket state (via `mcp__claude_ai_Linear__get_issue`): status, description, labels, links/attachments.
-- Skill-authored Linear comments (via `mcp__claude_ai_Linear__list_comments`). These use HTML-comment markers `<!-- ship-issue:<category>:<key>=<value> -->`.
+- Skill-authored Linear comments (via `mcp__claude_ai_Linear__list_comments`). These use HTML-comment markers `<!-- ship-issue:<category>:<key>=<value> -->`. Retain the **full** non-marker comment bodies too — the cancel scan below reads them.
 - All PRs/MRs linked to the ticket (via the Linear attachments/links, cross-referenced with `gh pr list --search <ticket-id>` or `glab mr list --search <ticket-id>`).
-- For any open PR/MR: its review comments and its check-run / pipeline statuses (`gh pr view --json`, `gh pr checks --json`, `glab mr view --output json`, `glab ci view --output json`).
+- For any open PR/MR: its review comments and its check-run / pipeline statuses (`gh pr view --json`, `gh pr checks --json name,state,bucket`, `glab mr view --output json`, `glab ci view --output json`), plus the **behind-base signal** — GitHub: `gh pr view <pr> --json mergeStateStatus` (a value of `BEHIND` means the branch is behind its base); GitLab: the diverged/behind commit counts from `glab mr view`. Phase 3.5's rebase trigger reads this signal.
+
+**Cancel scan.** Scan the latest non-marker Linear comments for a standalone `cancel` — case-insensitive, where the whole comment body (or its first line) trimmed equals `cancel`. On a match → terminal halt: derive `failed` with reason `cancel-requested` and run Phase 7's stop flow (CronDelete). A `cancel` buried mid-paragraph does **not** trigger — only a standalone-comment / first-line cancel.
 
 **If any of these reads fail** (non-zero exit, timeout, partial/paginated result the skill can't reconcile, or an MCP error) → transition to `blocked-user` with reason `cannot-read-ticket-state:<tool>:<detail>`. Do not fall through to the table — an unknown state is not "no match found." This matters most for row 1a: silently treating a failed `list_comments` as "no `verify:passed` marker" would bypass the validation gate.
 
-For CI checks specifically: `completed` checks with `conclusion=failure` are "failing"; `in_progress` and `queued` checks are **pending** (not failing). Only completed-failed checks drive rows 3a/3b.
+For CI checks specifically, classify by a status vocabulary unified with the GitHub sibling's `bucket` schema. **GitHub** (`gh pr checks --json name,state,bucket`): a check is **failing** when `bucket=fail`, **pending** when `bucket=pending`; `pass`/`skipping`/`cancel` are not failing. **GitLab** pipelines (`glab ci view`): a job is **failing** when its status is `failed`, **pending** when `running` or `pending`; `success` is not failing. Only the failing-bucket checks (GitHub `bucket=fail`, GitLab `failed`) drive rows 3a/3b.
 
 ### State table
 
@@ -188,15 +199,18 @@ Apply these rules **in order** — first match wins. Phase 3 is the single point
 
 | # | Condition | Derived state |
 |---|---|---|
+| 0 | The ticket is already in a **terminal tracker state** (`statusType` of `completed` or `canceled`) AND **no merged PR/MR** is linked | In list/parent context: **skip** this item (move to the next). In single-ticket context: `blocked-user` (reason: `ticket-already-terminal`) |
 | 1a | A PR/MR linked to this ticket is **merged** AND the ticket description has a `## Validation` section (see matching rule below) AND no `<!-- ship-issue:verify:passed -->` comment exists | `blocked-verify` |
 | 1 | A PR/MR linked to this ticket is **merged** (and 1a does not apply) | `merged` |
 | 2 | A PR/MR linked to this ticket is **closed but not merged** | `failed` (surface the closed-PR URL, halt) |
 | 3 | An **open PR/MR** exists AND has review comments (human or code-review-bot) created *after* the last skill commit | `fixing` |
-| 3a | An **open PR/MR** exists, no new review comments since the last skill commit, AND one or more completed CI checks have `conclusion=failure` of the **assertion type** (unit test, lint, type check, code-review-bot check-run with findings) | `fixing` |
-| 3b | An **open PR/MR** exists, no new review comments since the last skill commit, AND one or more completed CI checks have `conclusion=failure` of the **infra/env type** (secrets missing, dependency resolution failure, runner error, no test output at all) | `blocked-user` (reason: `ci-infra-failure:<check-name>`) |
-| 4 | An **open PR/MR** exists, no new review comments, no failing CI checks | `pr-open` |
-| 5 | No PR has ever existed, ticket is in `In Progress` or `In Review` | `implementing` (resume — do not reset) |
+| 3a | An **open PR/MR** exists, no new review comments since the last skill commit, AND one or more CI checks are in the **failing bucket** (GitHub `bucket=fail`, GitLab `failed`) of the **assertion type** (unit test, lint, type check, code-review-bot check-run with findings) | `fixing` |
+| 3b | An **open PR/MR** exists, no new review comments since the last skill commit, AND one or more CI checks are in the **failing bucket** of the **infra/env type** (secrets missing, dependency resolution failure, runner error, no test output at all) | `blocked-user` (reason: `ci-infra-failure:<check-name>`) |
+| 4 | An **open PR/MR** exists, no new review comments, no failing-bucket CI checks | `pr-open` |
+| 5 | No PR has ever existed, ticket is in a `started`-type state (default `In Progress` / `In Review`) | `implementing` (resume — do not reset) |
 | 6 | No PR, no prior activity | `pending` |
+
+Row 0 is **first-match-wins** and precedes row 1: a ticket whose `statusType` is `completed` (Done) or `canceled` with no merged PR/MR is already terminal and re-shipping it would be wrong — skip it in a list/parent walk, or block in single-ticket context so the human knows the ID points at a closed ticket. (`statusType` is resolved per Phase 1 — see the resolved-state caching rule.)
 
 ### Supporting rules
 
@@ -204,8 +218,10 @@ Apply these rules **in order** — first match wins. Phase 3 is the single point
 
 **Edge cases for rows 3a / 3b** — apply in this order:
 
-1. **Classify each failing check per-check first**, before evaluating the table rows. For each completed-failure check, decide: assertion-type (unit/lint/type/code-review-bot-with-findings) or infra-type (secrets, dep resolution, runner error, no test output). If a check's failure is ambiguous (timeout, opaque build failure, no discernible output), classify it as infra-type. Rationale: a false escalation is a minor interruption, but burning a three-strikes attempt on an infra failure wastes the counter and leaves the real issue invisible.
+1. **Classify each failing-bucket check per-check first**, before evaluating the table rows. For each failing-bucket check, decide: assertion-type (unit/lint/type/code-review-bot-with-findings) or infra-type (secrets, dep resolution, runner error, no test output). If a check's failure is ambiguous (timeout, opaque build failure, no discernible output), classify it as infra-type. Rationale: a false escalation is a minor interruption, but burning a three-strikes attempt on an infra failure wastes the counter and leaves the real issue invisible.
 2. **After per-check classification, evaluate rows 3a / 3b against the post-classification set.** If any assertion-type check remains failing, row 3a fires (first-match-wins) and an accompanying infra failure is *not* independently surfaced that wake — it will re-surface on a later wake (once the assertion check clears, only infra remains, and row 3b fires). If *no* assertion-type check remains after step 1's reclassification (e.g. the only failing check was ambiguous and got reclassified to infra), row 3a does not fire; row 3b may.
+
+**Stale-CI freshness guard (rows 3a/3b + three-strikes).** A failing-bucket check counts as failing only if its run targets the **current head SHA** of the PR/MR (GitHub: the check-run's `head_sha` matching the PR's `headRefOid`; GitLab: the pipeline's `sha` matching the MR's source-branch tip). A failure recorded against an older commit is **stale** — treat it as `pending`, not failing. This stops a fix-push from being scored against a not-yet-rerun check: the old failing run lingers until CI re-triggers on the new SHA, and counting it would mis-fire row 3a and burn a three-strikes attempt on a result that no longer reflects the branch.
 
 **Defining "the last skill commit"** (used in rows 3, 3a, 3b, 4): the most recent commit on the PR/MR branch carrying the skill's commit marker. Check the `<!-- ship-issue:commit -->` HTML comment in the commit body first — this is the primary marker, written on every skill commit (see the **Skill-commit marker** rule below). Fall back to the legacy `Co-Authored-By: Claude` trailer for commits made before the HTML marker landed (or where a human pushed the initial commits without either marker):
 
@@ -227,18 +243,22 @@ Never reset a ticket that Linear shows as In Progress or In Review. Resume.
 
 ## Phase 4: Handle state
 
-> **Run Phase 5 escape-hatch checks first, before executing any handler below.** Phase 5's hard stops dominate state derivation: if any condition there is met, transition to `failed` immediately and do not execute a Phase 4 handler on this wake. The three-strikes CI counter in particular must be evaluated against the latest check statuses before `pr-open` or `fixing` run.
+> **Run Phase 3.5 escape-hatch checks first, before executing any handler below.** Phase 3.5's hard stops dominate state derivation: if any condition there is met, transition to `failed` immediately and do not execute a Phase 4 handler on this wake. The three-strikes CI counter in particular must be evaluated against the latest check statuses before `pr-open` or `fixing` run.
+
+> Handlers below reference Linear states by **resolved-state variable** (the per-team name cached in Phase 1 by `statusType`), shown with the default name in parentheses. A team that renamed its states still gets the right transition.
 
 ### `pending` → `implementing`
 
-1. Transition Linear status to `In Progress` via `mcp__claude_ai_Linear__save_issue` with `state: "In Progress"`.
+1. Transition Linear status to the resolved `started` state (default `In Progress`) via `mcp__claude_ai_Linear__save_issue`.
 2. Write a Linear comment noting start: `<!-- ship-issue:event:started --> 🚢 ship-issue started.`
 3. `cd` to the resolved workdir. Pull latest `main`/`master`. Create a feature branch from the ticket's `gitBranchName` (Linear provides this on the issue object).
 4. Read the full ticket description. Implement against the acceptance criteria. Run the repo's local checks (`pnpm test`, `pnpm lint`, etc. — read `package.json` scripts or an existing CLAUDE.md for the correct commands). After local checks pass, run the **UI-reachability check** (defined below) — ensures the change is reachable from the existing UI, or that the ticket carries an explicit note for human validators.
 5. Commit with a descriptive body explaining the *why*. Follow the **Skill-commit marker** rule (Phase 3 supporting rules): always include a `<!-- ship-issue:commit -->` HTML comment in the commit body (the primary signal for the Phase 3 "last skill commit" lookup); include a `Co-Authored-By: Claude <noreply@anthropic.com>` trailer unless a reachable `CLAUDE.md` forbids it.
 6. Push the branch.
-7. Open the PR/MR using the platform CLI. Include a Linear Magic URL reference in the body (e.g. `Closes PROJ-88` or a `Linear: <issue-url>` line) so the issue auto-links.
-8. Transition Linear to `In Review`. Record the PR URL via `save_issue`'s `links` field.
+7. Open the PR/MR using the platform CLI. Include a Linear reference so the issue auto-links — **but the choice of reference depends on the validation gate** (same `## Validation` heading-match rule as Phase 3 row 1a):
+   - **No `## Validation` heading** in the ticket description → use a Linear Magic URL close word (e.g. `Closes PROJ-88`) so the merge auto-completes the issue.
+   - **`## Validation` heading present** → **omit the magic close word**; use a non-closing reference instead (a plain `Linear: <issue-url>` line, which links the issue without auto-completing it on merge). This lets the worker — not the merge — control when the issue moves to the done state: the `merged` handler transitions it only after the `blocked-verify` gate passes. A magic close word would auto-complete the issue on merge *before* the next wake's row 1a could derive `blocked-verify`, turning the gate into a post-mortem (the `Closes`-trailer-races-the-validation-gate race documented in `DESIGN.md`).
+8. Transition Linear to the resolved in-review state (default `In Review`). Record the PR URL via `save_issue`'s `links` field.
 9. State becomes `pr-open`. Return — the `/loop` harness will wake again in 6 minutes.
 
 #### UI-reachability check (referenced by `pending → implementing` step 4 and `implementing (resume)`)
@@ -273,21 +293,24 @@ Same as `pending → implementing` but:
 
 `pr-open` means: an open PR exists, no new reviewer comments, no failing checks. There's nothing to do on this wake.
 
-1. Print a one-line "still waiting" summary: the PR URL, the last skill-commit SHA, and the timestamp.
-2. Return — the `/loop` harness will wake again in 6 minutes.
+**This skill NEVER runs `gh pr merge` / `glab mr merge` — a human merges.** The skill drives the PR/MR to green-and-reviewed and then waits; the final merge is always a human action.
 
-Do **not** push new commits, re-classify, or re-evaluate CI state here. All classification lives in Phase 3; if a CI check flips to failure between wakes, the next wake's Phase 3 will derive `fixing` (row 3a) or `blocked-user` (row 3b).
+1. Print a one-line "still waiting" summary: the PR URL, the last skill-commit SHA, and the timestamp.
+2. **Merge-nudge (idempotent, one-time).** If the PR/MR has been **green-but-unmerged with review addressed** (all checks in the passing/neutral buckets, no unresolved review comments) for **N=5 consecutive `pr-open` wakes** (~30 min at the 6-minute cadence), and no `<!-- ship-issue:note:merge-nudge -->` marker comment already exists on the ticket, post one marker-only Linear comment: `<!-- ship-issue:note:merge-nudge -->` (body is the marker plus the one-line "PR green & review addressed — ready to merge"). The marker's own presence makes this a no-op on every later wake, so it never re-posts.
+3. Return — the `/loop` harness will wake again in 6 minutes.
+
+Do **not** push new commits, re-classify, re-evaluate CI state, or merge here. All classification lives in Phase 3; if a CI check flips to failure between wakes, the next wake's Phase 3 will derive `fixing` (row 3a) or `blocked-user` (row 3b).
 
 ### `fixing`
 
-Entered from Phase 3 row 3 (new review comments) or row 3a (failing assertion CI check). This handler is invoked *by* Phase 5 sub-phase B step 4, not alongside it — Phase 5 dispatches into this handler and observes whether execution reaches step 6 below. The handler itself never reads or writes `failcount:<key>=N` comments; Phase 5 writes the increment only after observing a clean step-6 return. If this handler exits via `blocked-user` or `failed` before step 6, no increment is written for this wake.
+Entered from Phase 3 row 3 (new review comments) or row 3a (failing assertion CI check). This handler is invoked *by* Phase 3.5 sub-phase B step 4, not alongside it — Phase 3.5 dispatches into this handler and observes whether execution reaches step 6 below. The handler itself never reads or writes `failcount:<key>=N` comments; Phase 3.5 writes the increment only after observing a clean step-6 return. If this handler exits via `blocked-user` or `failed` before step 6, no increment is written for this wake.
 
 1. Use the check statuses and review comments gathered in Phase 3 — do not call `gh pr checks` / `glab ci view` or the comments API again. For each failing assertion CI check, fetch its **log output** now (e.g. `gh run view <run-id> --log-failed`, or `glab ci trace <job-id>`); logs were not retrieved in Phase 3, and this log fetch is the only additional network call this handler performs. Classify each item:
    - **code-review-bot finding** (author = the bot account or the well-known comment prefix).
    - **Human reviewer comment.**
    - **Failing assertion-style CI check** — drive the fix from the check's output.
    - **Scope-creep comment** (request for functionality outside the ticket's acceptance criteria) → `blocked-user` with reason `scope-creep`.
-   - **@-mention of Claude** → treat as a direct user instruction; read it. If it needs clarification → `blocked-user` with reason `user-mention-ambiguous`. Otherwise act on it.
+   - **@-mention of Claude** → **this handler is canonical for @-mentions.** Read it: an **actionable** mention (a concrete instruction the skill can carry out within the ticket's scope) → act on it here in `fixing`. An **ambiguous** mention, or a **redirect/cancel** mention → `blocked-user` with reason `user-mention-ambiguous`. (Phase 6 and Phase 7 defer to this rule — they do not flatly halt on every @-mention.)
 2. Make the fix in the workdir.
 3. **Before committing, re-run the repo's local checks** (the same commands from the `implementing` step). Interpret results:
    - All checks pass → proceed to step 4.
@@ -296,15 +319,15 @@ Entered from Phase 3 row 3 (new review comments) or row 3a (failing assertion CI
    - A check still reports the failure the fix was intended to resolve → go back to step 2; the fix isn't done.
 4. Commit with a descriptive message referencing the comment thread ID or the reviewer's ask. Follow the **Skill-commit marker** rule (Phase 3 supporting rules) — same marker conventions as `pending → implementing` step 5. Push.
 5. On each comment thread, reply with a short note referencing the fix commit SHA: `Fixed in abc1234.`
-6. Return — the next wake's Phase 3 will re-derive state from the new PR/CI reality. **Reaching this step is the success signal to Phase 5** (it's how Phase 5 step 4 knows the fix commit pushed cleanly and the counter can be incremented). If any earlier step transitioned to `blocked-user` or `failed`, execution never reaches here and Phase 5 does not write a failcount comment for this wake.
+6. Return — the next wake's Phase 3 will re-derive state from the new PR/CI reality. **Reaching this step is the success signal to Phase 3.5** (it's how Phase 3.5 step 4 knows the fix commit pushed cleanly and the counter can be incremented). If any earlier step transitioned to `blocked-user` or `failed`, execution never reaches here and Phase 3.5 does not write a failcount comment for this wake.
 
-**Do not write or modify `<!-- ship-issue:failcount:... -->` comments in this handler.** Phase 5 owns the counter lifecycle.
+**Do not write or modify `<!-- ship-issue:failcount:... -->` comments in this handler.** Phase 3.5 owns the counter lifecycle.
 
 ### `merged`
 
 Reaching this handler means Phase 3's row 1a did not apply (no `## Validation` gate, or the gate has already passed). No re-check here — Phase 3 is the single point of decision.
 
-1. Transition Linear to `Done` via `save_issue` with `state: "Done"`. Write a terminal comment: `<!-- ship-issue:event:merged --> ✅ Merged: <PR URL>.`
+1. Transition Linear to the resolved `completed` state (default `Done`) via `save_issue`. Write a terminal comment: `<!-- ship-issue:event:merged --> ✅ Merged: <PR URL>.`
 2. **Compact-on-merge** (skip in no-compact mode): if at least one non-terminal item remains in the queue, print the compaction prompt as the last output of this wake, after the Phase 8 block — `🗜 Sub-issue <ref> merged. Run /compact now to free context before picking up <next-ref>.` Trigger boundary, safety rationale, and exact rules live in [`../_shared/compact-on-merge.md`](../_shared/compact-on-merge.md). Never fires when the merged item was the last (the loop is about to self-cancel).
 3. **If the step-2 prompt fired, end the wake here** — return rather than working `<next-ref>` in this same wake; the next `/loop` wake re-derives state (the merged item is now skipped by Phase 2) and picks up `<next-ref>` fresh (safe per "Notes on persistence"). This is what gives the user a `/compact` opportunity at the boundary — same-wake continuation would surface the prompt only after `<next-ref>`'s work has already accumulated. Otherwise (no-compact mode, or no non-terminal items remain), advance to the next item in the list.
 
@@ -312,7 +335,7 @@ Reaching this handler means Phase 3's row 1a did not apply (no `## Validation` g
 
 Pre-Phase C behavior — auto-verify is **Planned** (Phase C — `/verify-ticket`):
 
-1. Inline the `## Validation` text into a `blocked-user` comment so a human can run it manually.
+1. Inline the `## Validation` text into a `blocked-user` comment so a human can run it manually. **The comment MUST include the unlock instruction verbatim:** "post a comment containing exactly `<!-- ship-issue:verify:passed -->`, then re-run `/abc:ship-issue <arg>`". Without that line the human has no documented way to clear the gate, and the next wake will re-derive `blocked-verify` forever.
 2. Transition to `blocked-user` with reason `awaiting-manual-verification`.
 
 Post-Phase C (not implemented here): the skill would invoke `/verify-ticket <id>` and branch on the result.
@@ -321,29 +344,29 @@ Post-Phase C (not implemented here): the skill would invoke `/verify-ticket <id>
 
 1. Write a Linear comment explaining what's blocking, which item, and what input is needed: `<!-- ship-issue:event:blocked --> 🛑 Blocked: <reason>. Needs: <ask>.`
 2. Slack ping is **Planned** for Phase B. Until then, the Linear comment plus the terminal output is the surface.
-3. Leave the Linear status at its current value — do not transition it. Crucially: if `blocked-user` fires during `implementing` (e.g. repo resolution fails, CLI auth missing, scope-creep detected while reading the ticket description), the status is `In Progress`, and that's where it stays. If it fires during `pr-open` / `fixing`, the status is `In Review` and stays there. The work isn't regressing; it's waiting on a human.
+3. Leave the Linear status at its current value — do not transition it. Crucially: if `blocked-user` fires during `implementing` (e.g. repo resolution fails, CLI auth missing, scope-creep detected while reading the ticket description), the status is the resolved `started` state (default `In Progress`), and that's where it stays. If it fires during `pr-open` / `fixing`, the status is the resolved in-review state (default `In Review`) and stays there. The work isn't regressing; it's waiting on a human.
 4. Halt the `/loop` — print the reason clearly so the user sees it.
 
 ### `failed`
 
 1. Write a Linear comment with the failure reason and any relevant URLs: `<!-- ship-issue:event:failed --> ❌ Failed: <reason>.`
-2. Transition Linear to `Canceled` (DESIGN.md §State machine).
+2. Transition Linear to the resolved `canceled` state (default `Canceled`) (DESIGN.md §State machine).
 3. Halt.
 
-## Phase 5: Escape hatches (hard stops)
+## Phase 3.5: Escape hatches (run before handlers)
 
-Run immediately after Phase 3, before any Phase 4 handler. Evaluated against the data already gathered in Phase 3 — do not re-fetch.
+Run immediately after Phase 3, before any Phase 4 handler — execution order matches reading order (3 → 3.5 → 4). Evaluated against the data already gathered in Phase 3 — do not re-fetch.
 
 ### Three-strikes CI counter
 
-Owned entirely by this phase. Phase 3 and Phase 4 never read or write `<!-- ship-issue:failcount:... -->` comments; only Phase 5 does.
+Owned entirely by this phase. Phase 3 and Phase 4 never read or write `<!-- ship-issue:failcount:... -->` comments; only Phase 3.5 does.
 
 Run on **every wake** (including `pr-open` and `merged` wakes — the reset step below depends on that). Two sub-phases:
 
 **Sub-phase A: reset scan — runs first, unconditionally.**
 
-1. List all existing `<!-- ship-issue:failcount:<key>=N -->` comments on the ticket where `N > 0`.
-2. For each such `<key>` (e.g. `github:ci/test` or `gitlab:build/compile`): look at the current CI data gathered in Phase 3. If a check with exactly that name exists and has `conclusion=success`, append a `<!-- ship-issue:failcount:<key>=0 -->` comment to record the reset.
+1. Comments are **append-only**, so for each `<key>` take only the **latest** `<!-- ship-issue:failcount:<key>=N -->` comment (the most recent by timestamp) — never "any comment with N>0", which would re-fire the reset forever. Consider a key live only when its latest failcount comment has `N > 0`.
+2. For each such live `<key>` (e.g. `github:ci/test` or `gitlab:build/compile`): look at the current CI data gathered in Phase 3. If a check with exactly that name now passes (GitHub `bucket=pass`, GitLab `success`), append a `<!-- ship-issue:failcount:<key>=0 -->` comment to record the reset.
 3. A key with no matching check in the current data (check was renamed, removed, or the PR has no CI run yet) is **not** reset — leave it. The counter only resets on an observed pass.
 
 Sub-phase A runs regardless of derived state. It's how the counter ever goes back down: a subsequent wake observes the same check passing and records `=0`.
@@ -352,7 +375,7 @@ Sub-phase A runs regardless of derived state. It's how the counter ever goes bac
 
 Fire **once per wake**, in this order:
 
-1. If Phase 3's derived state is not `fixing`, stop. If it is `fixing` but no completed CI check has `conclusion=failure` of the assertion type (after the per-check reclassification from the rows 3a/3b edge-case rules — i.e. no assertion-style checks are currently failing, regardless of which row derived `fixing`), also stop. Either way, there is no increment to perform this wake.
+1. If Phase 3's derived state is not `fixing`, stop. If it is `fixing` but no CI check is in the failing bucket (GitHub `bucket=fail`, GitLab `failed`) of the assertion type (after the per-check reclassification from the rows 3a/3b edge-case rules, including the stale-CI freshness guard — i.e. no fresh assertion-style checks are currently failing, regardless of which row derived `fixing`), also stop. Either way, there is no increment to perform this wake.
 2. Identify the failing assertion check(s). For each:
    - Key: `<platform>:<check-name>` where `<check-name>` is the GitHub check-run `name` or the GitLab pipeline job `name` (exact string match on subsequent wakes).
    - Read the most recent `<!-- ship-issue:failcount:<key>=N -->` comment. If none, `N = 0`.
@@ -361,7 +384,7 @@ Fire **once per wake**, in this order:
 
 ### Rebase against base — attempt-and-gate
 
-When the branch is detected as behind `main`/`master` (typically after a parent or sibling PR merges into the base during a parallel epic run), attempt an automatic rebase before escalating.
+When the branch is detected as behind `main`/`master` (typically after a parent or sibling PR merges into the base during a parallel epic run), attempt an automatic rebase before escalating. **Behind-base is detected from the signal gathered in Phase 3** — GitHub: `mergeStateStatus=BEHIND` on the open PR; GitLab: a non-zero behind/diverged commit count from `glab mr view`.
 
 1. `git fetch origin && git rebase origin/<base>`.
 2. **Conflict markers present** → `git rebase --abort`. Transition to `blocked-user` with reason `rebase-needs-human`. The marker comment lists the conflicted file paths so the human can resolve locally and push.
@@ -370,7 +393,7 @@ When the branch is detected as behind `main`/`master` (typically after a parent 
 5. **Gates fail** → `git rebase --abort`. Transition to `blocked-user` with reason `rebase-clean-but-tests-failed`. The marker comment summarises the failing gate output (top ~20 lines is enough).
 6. The **self-cheating hard stop** below applies verbatim inside this flow. No `--no-verify`, no `.skip()`-ing tests, no `// @ts-expect-error` to silence a failure, no widening types — even when auto-resolving. If the only way to make gates pass is to delete or weaken an assertion, abort and escalate via step 5.
 
-The legacy `failed: rebase-conflict-needs-human` reason is **no longer emitted**. Mechanical rebase failures are recoverable — the cron stays armed, the human nudges, the worker continues — so they belong on the `blocked-user` axis, not `failed`. `failed` is reserved for self-cheating and hard correctness walls (see below and the three-strikes counter above).
+The legacy `failed: rebase-conflict-needs-human` reason is **no longer emitted**. Mechanical rebase failures are recoverable by re-running `/abc:ship-issue <same-arg>` after resolving the conflict locally and pushing — so they belong on the `blocked-user` axis, not `failed`. Note the cron does **not** stay armed across a `blocked-user` halt: Phase 7's CronDelete fires on **all** halts (blocked-user, failed, all-merged), so re-running the command is what re-arms the loop. `failed` is reserved for self-cheating and hard correctness walls (see below and the three-strikes counter above).
 
 ### Self-cheating hard stop (the most important rule in this skill)
 
@@ -383,8 +406,8 @@ Soft stops — the loop pauses, the user resumes:
 - Review comment requests scope outside the ticket's acceptance criteria.
 - Same code-review-bot **rule ID** (finding-name, not severity or category) fires twice in a row after a fix commit. The precise comparison is the named rule — broader comparisons over/under-trigger.
 - CI fails in a non-assertion way (env missing, secrets unavailable, dependency resolution error).
-- Merge conflict with `main` after the attempted auto-rebase (see Phase 5 § Rebase against base — attempt-and-gate). Conflict markers or red gates after a clean rebase both escalate as `blocked-user`, not `failed`.
-- User @-mentions Claude on the PR.
+- Merge conflict with `main` after the attempted auto-rebase (see Phase 3.5 § Rebase against base — attempt-and-gate). Conflict markers or red gates after a clean rebase both escalate as `blocked-user`, not `failed`.
+- An **ambiguous, or a redirect/cancel @-mention** of Claude on the PR → `blocked-user`. **Actionable** @-mentions are handled in the `fixing` handler (Phase 4), which is canonical for mentions — do not halt on every @-mention.
 - Any repo-discovery condition from Phase 1 (missing / multiple / unresolvable `repo:` labels, unknown platform).
 
 ## Phase 7: Stop conditions
@@ -394,9 +417,10 @@ The loop halts when any of:
 - All items reach `merged`. Print summary.
 - Any item enters `blocked-user`. Print reason + what's needed.
 - Any item enters `failed`. Print the URL/reason.
-- User @-mentions Claude on a PR, or sends a direct message that the skill should interpret as a cancel/redirect.
+- An **ambiguous, or a redirect/cancel @-mention** of Claude on a PR (actionable mentions are handled in the `fixing` handler, not here).
+- A standalone `cancel` comment on the ticket is detected by the Phase 3 cancel scan (case-insensitive, whole-comment-body or first line) → terminal halt.
 
-**In every terminal case**, before returning, the skill calls `CronDelete` on its own `/loop` entry so the cron stops immediately. Identify the entry via the cron-entry match rule defined in Phase 0.5 (§ Cron-entry match rule): find the `CronList` entry, extract its job ID, and `CronDelete` it. The user should not have to run `/loop cancel` manually — that's part of the self-contained contract.
+**In every terminal case — blocked-user, failed, and all-merged alike** — before returning, the skill calls `CronDelete` on its own `/loop` entry so the cron stops immediately. CronDelete fires on **all** halts; the cron never stays armed past a halt. Identify the entry via the cron-entry match rule defined in Phase 0.5 (§ Cron-entry match rule): find the `CronList` entry, extract its job ID, and `CronDelete` it. The user should not have to run `/loop cancel` manually — that's part of the self-contained contract.
 
 If `CronDelete` fails (entry already gone, job-ID not found, etc.), do not halt the stop flow — print a note ("couldn't auto-cancel the loop; run `/loop cancel` if it's still firing") and continue. The terminal print + Linear comment are still the authoritative surface.
 
@@ -414,8 +438,10 @@ Items: <N>
   [blocked]     PROJ-68  awaiting-manual-verification
 
 Working: PROJ-66
-Next wake: /loop 6m /ship-issue <original-arg>
+Next wake: /loop 6m <command-name> <original-arg>
 ```
+
+`<command-name>` is the captured slash-command name from Phase 0.5 (e.g. `/abc:ship-issue`), not a hardcoded literal — same convention as the self-arm string.
 
 Keep the output short on no-op wakes — the idempotency contract makes per-wake verbosity expensive.
 

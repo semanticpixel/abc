@@ -20,18 +20,7 @@ Drives a Linear issue (or an ordered list of issues, or a parent with sub-issues
 
 ## Installation
 
-```bash
-# From the source repo root
-mkdir -p /path/to/your-repo/.claude/skills
-cp -r claude-code/skills/ship-issue /path/to/your-repo/.claude/skills/ship-issue
-```
-
-Or symlink:
-
-```bash
-mkdir -p /path/to/your-repo/.claude/skills
-ln -s /path/to/source-repo/claude-code/skills/ship-issue .claude/skills/ship-issue
-```
+This skill ships as part of the `abc` plugin marketplace — see the [top-level README](../../../../../README.md) for marketplace installation. Once the plugin is installed, `/ship-issue` is available alongside the GitHub sibling (`/ship-issue-gh`).
 
 ## Prerequisites
 
@@ -166,7 +155,8 @@ What happens:
 
 ## Limitations
 
-- **UI verification is out of scope.** If a ticket description has a `## Validation` section, the skill transitions to `blocked-user` and inlines the validation text for a human to run. Auto-verification is planned for Phase C (`/verify-ticket`).
+- **UI verification is out of scope.** If a ticket description has a `## Validation` section, the skill transitions to `blocked-user` and inlines the validation text for a human to run. To clear the gate, **post a Linear comment containing exactly `<!-- ship-issue:verify:passed -->`** (the unlock marker), then re-run `/ship-issue <arg>` — the next wake sees the marker and advances to `merged`. On validation-gated tickets the skill links the PR/MR with a non-closing reference (not a magic close word), so the merge doesn't auto-complete the issue before the gate runs. Auto-verification is planned for Phase C (`/verify-ticket`).
+- **The skill never merges.** It drives the PR/MR to green-and-reviewed and waits — a human runs the merge. After the PR has been merge-ready for ~30 min (5 consecutive `pr-open` wakes) the skill posts a one-time `<!-- ship-issue:note:merge-nudge -->` comment, then keeps waiting.
 - **Slack ping on blocked-user is not implemented yet.** Today the surface is a Linear comment + the terminal output. Slack integration is planned for Phase B.
 - **Repo inference is by label only.** The skill does not guess the target repo from the ticket title or file paths — a missing `repo:` label only works if the cwd is itself the right git repo. This is deliberate; see [DESIGN.md § Platform and repo discovery](./DESIGN.md#platform-and-repo-discovery).
 - **Sub-tasks run serially.** If two sub-tasks touch overlapping files and could be stacked, the skill still waits for the first to merge before starting the second. v1 is serial by design (see DESIGN.md § open questions).
