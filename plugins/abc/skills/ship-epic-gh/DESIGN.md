@@ -55,21 +55,31 @@ The Linear sibling reads `blocks` / `blocked by` typed relations. GitHub has no 
 
 The skill **unions both directions** when building the graph: a `blocks:#A` on B and a `blocked-by:#B` on A are the same edge, deduplicated. This matters because `/abc:scaffold-sub-issues-gh` writes both halves redundantly for safety, and we don't want phantom double-edges.
 
-Cycle detection: identical DFS algorithm as the Linear sibling. Cycle → halt the epic, refuse to fire workers, write `<!-- ship-epic:event:cycle -->` on the parent.
+Cycle detection: identical DFS algorithm as the Linear sibling. Cycle → **Phase 5 terminal**: write `<!-- ship-epic:event:cycle -->` on the parent **once** (dedup against an identical prior marker), `CronDelete` the epic's own loop, halt, refuse to fire workers.
 
 ## State machine (per child) — derived, not stored
 
 | State | Source |
 |---|---|
-| `merged` | `state=closed`, `stateReason=completed` (auto from PR's `Closes` trailer) — or `<!-- ship-issue:event:merged -->` comment from worker |
-| `failed` | `state=closed`, `stateReason=not_planned` — or `<!-- ship-issue:event:failed -->` comment |
-| `blocked-user` | `<!-- ship-issue:event:blocked -->` with no subsequent `event:resumed` |
-| `external-blocker` | `blocked-by:` label points outside the parsed child set, and that referenced issue isn't merged |
-| `in-flight` | `CronList` contains `/ship-issue-gh <owner>/<repo>#<n>` |
-| `ready` | All in-set `blocked-by:*` upstreams `merged`, no in-flight cron, `state=open` |
+| `merged` | `state=closed` AND `stateReason=completed` AND `<!-- ship-issue:event:merged -->` from worker; **plus** a `<!-- ship-issue:verify:passed -->` marker when the child body has a `## Validation` heading. Closed-completed alone (no merged marker) is **not** `merged` — the worker may still be finishing its validation gate |
+| `failed` | `<!-- ship-issue:event:failed -->` comment from the worker. (Closed `not_planned` **without** this marker is a human cancellation → `dropped (human-canceled)`, see below — not a worker failure) |
+| `blocked-user` | Latest `<!-- ship-issue:event:blocked -->` marker **not postdated** by a human (non-skill) comment or a `<!-- ship-issue:verify:passed -->` marker. (There is **no** `event:resumed` marker — a blocked child resumes by the coordinator re-firing its worker; see Re-fire on human reply) |
+| `external-blocker` | `blocked-by:` label points outside the parsed child set, and that referenced issue isn't merged. Recorded only in the epic's `<!-- ship-epic:status -->` comment — never on the child |
+| `in-flight` | `CronList` matches the worker cron-match rule for `<owner>/<repo>#<n>` — the namespace-aware `(?:[A-Za-z][A-Za-z0-9_-]*:)?ship-issue-gh <id>` key with the GitHub-ID boundary class (same string as the Phase 3 fire string) |
+| `dropped (human-canceled)` | `state=closed`, `stateReason=not_planned`, **no** `event:failed` marker. Surfaced, does **not** halt the epic |
+| `ready` | All in-set `blocked-by:*` upstreams `merged`, no in-flight cron, `state=open` — including a re-fireable previously-blocked child |
 | `waiting` | One or more in-set upstreams not yet `merged` |
+| `blocked-user: unclassifiable-child` | Catch-all — no row matched. A child never falls through silently |
 
 Same shape as the Linear sibling; only the source rows differ.
+
+**Re-fire on human reply.** No `event:resumed` marker exists. A `blocked-user` child becomes re-fireable (classify `ready` if blockers satisfied) when a human comment or `verify:passed` marker postdates its latest `event:blocked` marker — re-firing the worker is how a blocked child resumes.
+
+**Read-failure rule.** Any failed read (non-zero exit, timeout, unreconcilable pagination) → skip classifying that child this wake; don't fall through to a wrong state. Parent unreadable on consecutive wakes → `CronDelete` + halt.
+
+**Single-session constraint.** First wake only, before arming: a foreign `<!-- ship-epic:status -->` comment (this session didn't write it) → `blocked-user: possible-duplicate-coordinator`; a live `ship-issue-gh <PARENT-ID>` serial-walker cron → refuse with `parent-already-serial-walked`. One coordinator loop per parent.
+
+**Derived worker command.** The Phase 3 fire string and Phase 2 `in-flight` match key are the **same string**, derived from the captured `<command-name>` (`ship-epic-gh`→`ship-issue-gh`, namespace preserved). Never hardcode `/abc:`.
 
 ## Locked decisions
 
@@ -97,10 +107,11 @@ Don't re-litigate without a new round of architect review:
 
 - [ ] Hierarchy source (task-list parsing between fence markers) is robust to user edits outside the fence.
 - [ ] Dependency-graph edge unioning is correct — a `blocks:#A` on B and a `blocked-by:#B` on A produce exactly one edge.
-- [ ] DFS cycle detection halts before any worker is fired.
-- [ ] Worker fan-out via `Skill(skill: "loop", args: ...)` matches the cron-arming contract `/abc:ship-issue-gh` expects.
+- [ ] DFS cycle detection routes to the Phase 5 cycle terminal (deduped marker + `CronDelete`) before any worker is fired.
+- [ ] Worker fan-out via `Skill(skill: "loop", args: ...)` uses the derived `<worker-command>` (never hardcoded `/abc:`), and the `in-flight` match keys on the **same string**.
 - [ ] `<!-- ship-epic:status -->` comments are append-only across all terminal paths.
-- [ ] `CronDelete` is called on both the epic's loop AND every in-flight worker loop in the `failed` path.
+- [ ] `CronDelete` is called on the epic's loop in **every** terminal path (all-merged, failed, cycle, parent-unreadable, ambiguous-mention), and on every in-flight worker loop in the `failed` path.
+- [ ] The `failed` halt requires the worker's `event:failed` marker; a human-canceled child (`not_planned`, no marker) is `dropped (human-canceled)`, not a halt.
 - [ ] The "do not halt on `blocked-user`" rule survives all the branches (Phase 5 doesn't accidentally halt on the wrong terminal).
 
 ## What this doesn't do
