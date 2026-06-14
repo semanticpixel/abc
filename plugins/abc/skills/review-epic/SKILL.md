@@ -67,7 +67,10 @@ Anything else (GitHub `<owner>/<repo>#<n>` refs, comma-lists, `milestone:` refs,
 2. If `statusType` is `completed` (Done) or `canceled` → the epic is done, but **how to exit depends on whether a cron is armed**. Run the cron-entry match rule (below): if a matching entry **exists** (this is a loop tick), terminate via Phase 5 — emit the reviewed-PRs summary and `CronDelete` the entry — so the loop self-cancels instead of zombie-firing "epic done" every 12 minutes. Only when **no** matching cron exists (a fresh invocation against an already-done epic) print a one-line "epic done — nothing to review" and exit without arming.
 3. Resolve sub-issues: `mcp__claude_ai_Linear__list_issues` with `parentId: PARENT-ID`, no status filter — Linear's native parent/child relation replaces the `-gh` family's managed task-list fence. If the list is empty → reject: "PARENT-ID has no sub-issues. Run `/abc:scaffold-sub-issues` first."
 
-**If any of these reads fail** (MCP error, timeout) → halt with the error verbatim; an unknown epic state is not "nothing to review."
+**If any of these reads fails, classify the failure** (an unknown epic state is never treated as "nothing to review"):
+
+- **Permanent** (Linear `entity not found` / 404 — the parent was deleted or moved out of scope) → run Phase 5 termination (emit the reviewed-PRs summary and `CronDelete` the cron) and exit, so a deleted parent doesn't zombie-fire "epic done" every tick.
+- **Transient** (MCP error, timeout, 5xx, auth blip) → halt this tick **without** `CronDelete` and retry next tick. If the same error repeats across consecutive ticks, surface `stalled on same error; run /loop cancel` once so the human can intervene.
 
 ### Self-arm the loop
 
@@ -123,14 +126,17 @@ No targets this tick → print the one-line no-op summary (Phase 6) and return.
 
 For each target, in sub-issue order:
 
-1. Fetch the diff: `gh pr diff <n> --repo <owner>/<repo>` or `glab mr diff <iid> -R <project-path>`.
-2. Spawn the existing **`abc:reviewer`** subagent (`Agent` tool, `subagent_type: reviewer`) — do **not** edit `agents/reviewer.md`; extend its input via the prompt. Pass:
+1. **Fetch the diff and pin the reviewed SHA.** GitHub — `gh pr diff <n> --repo <owner>/<repo>`, then re-read `headRefOid` (`gh pr view <n> --repo <owner>/<repo> --json headRefOid`). GitLab — `glab mr diff <iid> -R <project-path>`, capturing the `diff_refs` (`base_sha` / `start_sha` / `head_sha`) from the same `glab mr view <iid> -R <project-path> --output json` the diff was produced against; these refs build the inline `position` in step 4, so reading them once here guarantees the position matches the bytes reviewed. If the freshly-read HEAD (`headRefOid` / `diff_refs.head_sha`) differs from the SHA Phase 2 selected this target on, the branch advanced mid-tick → **abort this target's pass with `[head-moved]`, drop no marker**, and let the next tick re-derive. Otherwise pin `<reviewed-sha>` to that value — it flows through the GitHub `commit_id` / the GitLab `position`, and is the SHA written in the step-5 marker, so the marker can never claim a SHA the review wasn't produced against.
+2. Spawn the existing **`abc:reviewer`** subagent (`Agent` tool, `subagent_type: abc:reviewer` — plugin agents register namespaced; the bare `reviewer` does not resolve in a live session) — do **not** edit `agents/reviewer.md`; extend its input via the prompt. Pass:
    - The unified diff (its standard input contract), plus
+   - **Platform + PR/MR ref** — `github`/`gitlab`, the repo/project identity, PR `#<n>` / MR `!<iid>`, and the reviewed SHA — so findings cite the concrete target.
+   - **The repo's review rules** — the contents of `<workdir>/.claude/review-rules.md` when that file exists; omit silently when absent.
+   - **Full files for every touched path** — Linear children resolve to a **local checkout** at the Phase 0.7-cached `<workdir>`, so state the absolute path in the prompt — "repo root for all paths in this diff: `<abs-path>`" — and tell the reviewer it may read full files there for surrounding context, rather than working from the hunk alone. (This is the GitHub variant's one divergence: there the files are fetched via `gh api` because a cross-repo child may have no checkout — here the checkout exists.)
    - **Cross-cutting epic context** from Phase 1: the parent spec, this child's acceptance criteria **verbatim with their sub-issue ID**, merged-sibling decisions, and pending children's criteria — with the instruction to additionally evaluate (a) which acceptance bullets this diff satisfies/misses, citing them **by sub-issue ID and bullet**, and (b) forward-looking flags where a pending sub-issue will exercise this code differently.
 3. **Per-tick post gate** (first review pass of this tick only): show the assembled review — inline comments plus summary — via `AskUserQuestion` for a single go/no-go. Approval covers this and **every subsequent post in this tick** (see Hard Rules — consent can't persist across ticks because no consent marker is stored); decline → halt the loop and `CronDelete` via the Phase 0 match rule. Later passes in the same tick skip this step entirely.
-4. Post the review:
-   - **GitHub** — one call: `POST /repos/<owner>/<repo>/pulls/<pr>/reviews` with `event: COMMENT`, the reviewer's inline comments as the `comments` array, and the summary as the review body.
-   - **GitLab** — no batch review API: post each inline comment as a positioned discussion via `glab api "projects/<encoded-project-path>/merge_requests/<iid>/discussions" -f body=<text>` with the **full six-field `position` object** ([API doc](https://docs.gitlab.com/api/discussions/#create-a-new-thread-in-the-merge-request-diff)): `position[base_sha]` / `position[start_sha]` / `position[head_sha]` from the MR's `diff_refs`, `position[position_type]=text` (literal), and `position[new_path]` + `position[new_line]` for the new side of the diff (use `old_path` / `old_line` for deletion and context-only lines). Omitting any of the last three returns a generic 400 "the position is invalid" that's easy to mis-attribute to `diff_refs`. Then the summary as one `glab mr note <iid> -R <project-path> --message <body>`.
+4. **Re-check PR/MR state, then post.** After gate approval and immediately before posting, re-read the target's state (GitHub: `gh pr view <n> --repo <owner>/<repo> --json state,mergedAt`; GitLab: `glab mr view <iid> -R <project-path> --output json` → `state`); if it is merged/closed → **skip this target with `[merged-before-post]`, drop no marker** — a review on a merged target is noise and would burn the dedup marker. Otherwise post the review:
+   - **GitHub** — one call: `POST /repos/<owner>/<repo>/pulls/<pr>/reviews` with `event: COMMENT`, `commit_id: <reviewed-sha>` (pins the review to the exact SHA reviewed — without it GitHub attaches to the latest HEAD and inline comments mis-anchor when the branch moved), the reviewer's inline comments as the `comments` array, and the summary as the review body.
+   - **GitLab** — no batch review API: post each inline comment as a positioned discussion via `glab api "projects/<encoded-project-path>/merge_requests/<iid>/discussions" -f body=<text>` with the **full six-field `position` object** ([API doc](https://docs.gitlab.com/api/discussions/#create-a-new-thread-in-the-merge-request-diff)): `position[base_sha]` / `position[start_sha]` / `position[head_sha]` built from the **`diff_refs` captured in step 1** (the same response the diff came from — never a fresh read, which could have advanced past the reviewed bytes), `position[position_type]=text` (literal), and `position[new_path]` + `position[new_line]` for the new side of the diff (use `old_path` / `old_line` for deletion and context-only lines). Omitting any of the last three returns a generic 400 "the position is invalid" that's easy to mis-attribute to `diff_refs`. Then the summary as one `glab mr note <iid> -R <project-path> --message <body>`.
 
    **Post-failure guard (both platforms):** if any posting call returns 4xx, halt this PR/MR's pass **without dropping the step-5 dedup marker** and surface the response body in the tick output. The marker is only written after every post for that target succeeds — otherwise a malformed `position` would burn the review *and* mark the HEAD as reviewed, and the loop would never retry it.
 
@@ -138,7 +144,7 @@ For each target, in sub-issue order:
    - **(a) Inline comments** — one-line index of what was flagged.
    - **(b) Spec cross-reference** — "satisfies ST-N bullet X … misses ST-N bullet Y", citing specific acceptance bullets by sub-issue ID, never free-text paraphrase.
    - **(c) Forward-looking flags** — "ST-N+1 will exercise this path differently; current shape will need rework", citing the pending child.
-5. Drop the dedup marker as a **marker-only** top-level comment on the PR/MR (the marker is the entire body, matching the `<!-- ship-issue:* -->` marker-only convention): `gh pr comment <n> --repo <owner>/<repo> --body '<!-- review-epic:reviewed-at:<sha> -->'` or `glab mr note <iid> -R <project-path> --message '<!-- review-epic:reviewed-at:<sha> -->'` where `<sha>` is the HEAD SHA the review was produced against. **Never on the Linear issue.**
+5. Drop the dedup marker as a **marker-only** top-level comment on the PR/MR (the marker is the entire body, matching the `<!-- ship-issue:* -->` marker-only convention): `gh pr comment <n> --repo <owner>/<repo> --body '<!-- review-epic:reviewed-at:<reviewed-sha> -->'` or `glab mr note <iid> -R <project-path> --message '<!-- review-epic:reviewed-at:<reviewed-sha> -->'` where `<reviewed-sha>` is the pinned value from step 1 (the SHA the review was actually produced against), **not** a freshly re-read HEAD. **Never on the Linear issue.**
 6. **Compact-between-reviews boundary** — see Phase 4 before starting the next target.
 
 ## Phase 4: Compact between reviews
@@ -155,7 +161,7 @@ then **end the tick** (same end-the-wake rule as the workers — the dedup marke
 
 On every tick, before Phase 1, re-check the parent:
 
-- **Parent `statusType` is `completed` (Done) or `canceled`** → terminal. Print a summary of all PRs/MRs reviewed by this loop (scan for this skill's `<!-- review-epic:reviewed-at:* -->` markers across the children's PRs/MRs) with thread links, `CronDelete` the loop's own cron entry via the Phase 0 match rule, and exit cleanly. This lands within one tick of the parent transitioning to Done.
+- **Parent `statusType` is `completed` (Done) or `canceled`** → terminal. To build the reviewed-PRs/MRs summary, **re-run Phase 2 enumeration with the state filters dropped** — every sub-issue regardless of `statusType`, and `gh pr list ... --state all` / `glab mr list ... --state all` — because by termination every reviewed child PR/MR is merged/closed and the default open-only enumeration would find nothing to scan for `<!-- review-epic:reviewed-at:* -->` markers. Print the summary with thread links, `CronDelete` the loop's own cron entry via the Phase 0 match rule, and exit cleanly. This lands within one tick of the parent transitioning to Done.
 - User-invoked `Ctrl-C` / loop cancellation needs no cleanup — every tick re-derives from Linear + the VCS; markers already posted keep dedup correct on any future re-arm.
 
 If `CronDelete` fails, print a note ("couldn't auto-cancel; run /loop cancel") and continue — the summary is the authoritative surface.
@@ -166,10 +172,14 @@ If `CronDelete` fails, print a note ("couldn't auto-cancel; run /loop cancel") a
 /review-epic tick <timestamp>
 Parent: PROJ-100  "<title>"  (open, 3 of 6 children merged)
 
-  [reviewed]        PR #43 (PROJ-103)  5 inline, 2 spec-refs, 1 forward flag
-  [skipped]         MR !12 (PROJ-104)  marker matches HEAD abc1234
-  [no-pr-yet]       PROJ-105, PROJ-106
-  [no-repo-label]   PROJ-107
+  [reviewed]            PR #43 (PROJ-103)  5 inline, 2 spec-refs, 1 forward flag
+  [skipped]             MR !12 (PROJ-104)  marker matches HEAD abc1234
+  [head-moved]          PR #44 (PROJ-105)  HEAD advanced mid-tick; re-review next tick
+  [merged-before-post]  PR #45 (PROJ-106)  merged after gate; no review posted
+  [no-pr-yet]           PROJ-107
+  [no-repo-label]       PROJ-108
+  [no-workdir]          PROJ-109  repo:foo → no <cwd>/foo/ subdir
+  [unknown-platform]    PROJ-110  remote is neither github.com nor gitlab.*
 
 Next tick: /loop 12m /abc:review-epic <raw-arg>
 ```
