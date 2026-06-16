@@ -91,18 +91,18 @@ the corrected code here
 
 ### CSS
 
-- **Hardcoded colors** (hex, rgb, hsl, named) — always flag. Use design tokens. Most common issue. Do NOT suggest adding new theme tokens — defer to repo rules for overrides.
-- `!important` — code smell.
-- ID selectors in stylesheets.
-- Deep nesting (>3 levels).
+- **Hardcoded colors** (hex, rgb, hsl, named) — always flag. Must use design tokens; the single most common issue. Advise the author to use the existing theme token; if the existing token's value doesn't match the desired color, override the variable within component scope following the repo's color-scheme conventions (check repo rules for specifics). Do NOT suggest adding new tokens to theme files — defer to repo rules for how overrides work.
+- `!important` — almost always a code smell. Flag it.
+- ID selectors (`#foo`) in stylesheets — specificity bomb; use classes.
+- Deep nesting (>3 levels of selectors) — hard to override; refactor.
 - Inline `style={{}}` — flag unless setting dynamic values (transforms, CSS custom properties).
 - `transition: all` — specify the property.
 - Animations missing `prefers-reduced-motion`.
 - Animations on layout-triggering properties (`width`, `height`, `top`, `left`, `margin`) — prefer `transform`/`opacity`.
-- `z-index` without a stacking-context comment.
+- `z-index` without a comment explaining the stacking context.
 - **Physical properties** — use logical equivalents: `margin-left/right` → `margin-inline-*`, `padding-left/right` → `padding-inline-*`, `left/right/top/bottom` → `inset-inline-*`/`inset-block-*`, `border-left/right` → `border-inline-*`. `width/height` → `inline-size`/`block-size` is a nit (less adopted). Exception: physical when the direction is truly physical (screen-edge anchored).
-- **Token semantic misuse** — `--color-action-*` for static text is wrong. Tokens have purposes.
-- **Primitive token misuse** — raw primitives (`--neutral-10`, `--white`, `--green-50`) in component styles when a semantic exists. Exception: inside `light-dark()` calls.
+- **Token semantic misuse** — using a token outside its intended purpose is as bad as hardcoding. E.g. `--color-action-*` tokens are for interactive/clickable elements; using them for static text color is a semantic mismatch. Flag when a token's name clearly indicates a different purpose than how it's being used.
+- **Primitive token misuse** — raw primitive/scale tokens (`--neutral-10`, `--white`, `--green-50`) used directly in component styles when a semantic token exists (`--color-bg-primary`, `--color-text-primary`, etc.). Primitives describe *what the color is*; semantics describe *what it's for* — components should use semantics so themes work correctly. Exception: inside `light-dark()` calls.
 - **Prefer `light-dark()` over `[data-color-scheme]` nesting** — when light/dark values are co-defined.
 - **Redundant dark-mode selectors** — semantic tokens already switch by mode; wrapping them in `[data-color-scheme='dark'] &` is redundant.
 - Magic numbers for spacing/sizing without explanation.
