@@ -277,6 +277,7 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
 [Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.5...HEAD
+[0.9.5]: https://github.com/semanticpixel/abc/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/semanticpixel/abc/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/semanticpixel/abc/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/semanticpixel/abc/compare/v0.9.1...v0.9.2
