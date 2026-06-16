@@ -61,6 +61,11 @@ Anything else (Linear IDs, bare `#<n>`, milestone refs, comma-lists) → reject 
 2. If `state=closed` → the epic is done, but **how to exit depends on whether a cron is armed**. Run the cron-entry match rule (below): if a matching entry **exists** (this is a loop tick), terminate via Phase 5 — emit the reviewed-PRs summary and `CronDelete` the entry — so the loop self-cancels instead of zombie-firing "epic closed" every 12 minutes. Only when **no** matching cron exists (a fresh invocation against an already-closed epic) print a one-line "epic closed — nothing to review" and exit without arming.
 3. Locate the `<!-- ship-epic:sub-issues:start/end -->` fence. If missing → reject: "Parent has no managed `## Sub-issues` task-list. Run `/abc:scaffold-sub-issues-gh` first." Parse the `- [ ] / - [x] <ref>` entries to fully-qualified child IDs (same parse rule as `ship-epic-gh` Phase 0).
 
+**If the parent read fails, classify the failure** (an unknown epic state is never treated as "nothing to review"):
+
+- **Permanent** (HTTP 404/410, `Could not resolve to an Issue`, repo-not-found) → the parent is gone. Run Phase 5 termination (emit the reviewed-PRs summary and `CronDelete` the cron) and exit, so a deleted/moved parent doesn't zombie-fire "epic closed" every tick.
+- **Transient** (timeout, 5xx, connection reset, auth blip) → halt this tick **without** `CronDelete` and retry next tick. If the same error repeats across consecutive ticks, surface `stalled on same error; run /loop cancel` once so the human can intervene.
+
 ### Self-arm the loop
 
 Mirror `ship-epic-gh`'s cron-entry match rule with this skill's name:
@@ -105,16 +110,21 @@ No targets this tick → print the one-line no-op summary (Phase 6) and return.
 
 For each target PR, in task-list order:
 
-1. Fetch the diff: `gh pr diff <n> --repo <owner>/<repo>`.
-2. Spawn the existing **`abc:reviewer`** subagent (`Agent` tool, `subagent_type: reviewer`) — do **not** edit `agents/reviewer.md`; extend its input via the prompt. Pass:
+1. **Fetch the diff and pin the reviewed SHA.** `gh pr diff <n> --repo <owner>/<repo>`, and in the same step re-read the PR's current HEAD (`gh pr view <n> --repo <owner>/<repo> --json headRefOid -q .headRefOid`). If it differs from the `headRefOid` Phase 2 selected this target on, the branch advanced mid-tick → **abort this target's pass with `[head-moved]`, drop no marker**, and let the next tick re-derive against the new HEAD. Otherwise pin `<reviewed-sha>` to that value — it flows through the review POST's `commit_id` and is the SHA written in the step-5 dedup marker, so the marker can never claim a SHA the review wasn't produced against.
+2. Spawn the existing **`abc:reviewer`** subagent (`Agent` tool, `subagent_type: abc:reviewer` — plugin agents register namespaced; the bare `reviewer` does not resolve in a live session) — do **not** edit `agents/reviewer.md`; extend its input via the prompt. Pass:
    - The unified diff (its standard input contract), plus
+   - **Platform + PR ref** — `github`, `<owner>/<repo>`, PR `#<n>`, and the reviewed SHA — so findings cite the concrete target.
+   - **The repo's review rules** — the contents of `<workdir>/.claude/review-rules.md` when present, fetched via `gh api /repos/<owner>/<repo>/contents/.claude/review-rules.md?ref=<reviewed-sha>` (this session may hold no checkout of the child's repo); omit silently when absent.
+   - **Full files for every touched path**, fetched via `gh api /repos/<owner>/<repo>/contents/<path>?ref=<reviewed-sha>` — the diff alone hides surrounding context. **Instruct the reviewer NOT to attempt local file reads:** a cross-repo child may have no checkout in this session, so every byte it needs must be in the prompt.
    - **Cross-cutting epic context** from Phase 1: the parent spec, this child's acceptance criteria **verbatim with their sub-issue ID**, merged-sibling decisions, and pending children's criteria — with the instruction to additionally evaluate (a) which acceptance bullets this diff satisfies/misses, citing them **by sub-issue ID and bullet**, and (b) forward-looking flags where a pending sub-issue will exercise this code differently.
 3. **Per-tick post gate** (first review pass of this tick only): show the assembled review — inline comments plus summary — via `AskUserQuestion` for a single go/no-go. Approval covers this and **every subsequent post in this tick** (see Hard Rules — consent can't persist across ticks because no consent marker is stored); decline → halt the loop and `CronDelete` via the Phase 0 match rule. Later passes in the same tick skip this step entirely.
-4. Post the review in one `gh api` call: `POST /repos/<owner>/<repo>/pulls/<pr>/reviews` with `event: COMMENT`, the reviewer's inline comments as the `comments` array, and a **summary body** with explicit structure:
+4. **Re-check PR state, then post.** After gate approval and immediately before posting, re-read the PR state (`gh pr view <n> --repo <owner>/<repo> --json state,mergedAt`); if it is merged or closed → **skip this target with `[merged-before-post]`, drop no marker** — a review on a merged PR is noise and would burn the dedup marker. Otherwise post the review in one `gh api` call: `POST /repos/<owner>/<repo>/pulls/<pr>/reviews` with `event: COMMENT`, `commit_id: <reviewed-sha>` (pins the review to the exact SHA reviewed — without it GitHub attaches to the latest HEAD and inline comments mis-anchor when the branch has moved), the reviewer's inline comments as the `comments` array, and a **summary body** with explicit structure:
    - **(a) Inline comments** — one-line index of what was flagged.
    - **(b) Spec cross-reference** — "satisfies ST-N bullet X … misses ST-N bullet Y", citing specific acceptance bullets by sub-issue ID, never free-text paraphrase.
    - **(c) Forward-looking flags** — "ST-N+1 will exercise this path differently; current shape will need rework", citing the pending child.
-5. Drop the dedup marker as a **marker-only** top-level PR comment (the marker is the entire body, matching the `<!-- ship-issue:* -->` marker-only convention): `gh pr comment <n> --repo <owner>/<repo> --body '<!-- review-epic:reviewed-at:<sha> -->'` where `<sha>` is the HEAD SHA the review was produced against.
+
+   **Post-failure guard:** if the review POST returns 4xx, halt this PR's pass **without dropping the step-5 dedup marker** and surface the response body in the tick output. The marker is written only after the post succeeds — otherwise a malformed payload would burn the review *and* mark the HEAD reviewed, and the loop would never retry it.
+5. Drop the dedup marker as a **marker-only** top-level PR comment (the marker is the entire body, matching the `<!-- ship-issue:* -->` marker-only convention): `gh pr comment <n> --repo <owner>/<repo> --body '<!-- review-epic:reviewed-at:<reviewed-sha> -->'` where `<reviewed-sha>` is the pinned value from step 1 (the SHA the review was actually produced against), **not** a freshly re-read HEAD.
 6. **Compact-between-reviews boundary** — see Phase 4 before starting the next target.
 
 ## Phase 4: Compact between reviews
@@ -131,7 +141,7 @@ then **end the tick** (same end-the-wake rule as the workers — the dedup marke
 
 On every tick, before Phase 1, re-check the parent:
 
-- **Parent `state=closed`** (any reason) or carrying a `status:done` label → terminal. Print a summary of all PRs reviewed by this loop (scan for this skill's `<!-- review-epic:reviewed-at:* -->` markers across the children's PRs) with thread links, `CronDelete` the loop's own cron entry via the Phase 0 match rule, and exit cleanly. This lands within one tick of the parent closing.
+- **Parent `state=closed`** (any reason) → terminal. To build the reviewed-PRs summary, **re-run Phase 2 enumeration with the state filters dropped** — all children (including `[x]`-completed task-list entries), `gh pr list ... --state all` — because by termination every reviewed child PR is merged/closed and the default `--state open` enumeration would find nothing to scan for `<!-- review-epic:reviewed-at:* -->` markers. Print the summary with thread links, `CronDelete` the loop's own cron entry via the Phase 0 match rule, and exit cleanly. This lands within one tick of the parent closing.
 - User-invoked `Ctrl-C` / loop cancellation needs no cleanup — every tick re-derives from GitHub; markers already posted keep dedup correct on any future re-arm.
 
 If `CronDelete` fails, print a note ("couldn't auto-cancel; run /loop cancel") and continue — the summary is the authoritative surface.
@@ -142,9 +152,11 @@ If `CronDelete` fails, print a note ("couldn't auto-cancel; run /loop cancel") a
 /review-epic-gh tick <timestamp>
 Parent: <owner>/<repo>#<n>  "<title>"  (open, 3 of 6 children merged)
 
-  [reviewed]   PR #43 (child #39)  5 inline, 2 spec-refs, 1 forward flag
-  [skipped]    PR #44 (child #40)  marker matches HEAD abc1234
-  [no-pr-yet]  child #41, #42
+  [reviewed]            PR #43 (child #39)  5 inline, 2 spec-refs, 1 forward flag
+  [skipped]             PR #44 (child #40)  marker matches HEAD abc1234
+  [head-moved]          PR #45 (child #41)  HEAD advanced mid-tick; re-review next tick
+  [merged-before-post]  PR #46 (child #42)  merged after gate; no review posted
+  [no-pr-yet]           child #50, #51
 
 Next tick: /loop 12m /abc:review-epic-gh <raw-arg>
 ```

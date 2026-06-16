@@ -5,10 +5,9 @@ conversation compaction at the natural terminal boundary of a shipped sub-issue,
 long-running shipping loops stay under context budget without ad-hoc user-driven
 `/compact` interruptions.
 
-**Consumed by:** `ship-issue`, `ship-issue-gh`, `ship-epic`, `ship-epic-gh`, and
-`review-epic-gh` (plus the planned `review-epic` Linear sibling). Each consumer's
-SKILL.md references this file at its trigger point rather than duplicating the rules —
-edit the convention here, in one place.
+**Consumed by:** `ship-issue`, `ship-issue-gh`, `ship-epic`, `ship-epic-gh`,
+`review-epic`, and `review-epic-gh`. Each consumer's SKILL.md references this file at its
+trigger point rather than duplicating the rules — edit the convention here, in one place.
 
 ---
 
@@ -41,7 +40,7 @@ this wake's status comment establishes the snapshot and no prompt is printed. Sa
 last-item rule as workers: when the wake is terminal (all merged → epic closing), skip —
 the loop is ending anyway.
 
-**Reviewers** (`review-epic-gh`, planned `review-epic`): at the **"between two PR
+**Reviewers** (`review-epic`, `review-epic-gh`): at the **"between two PR
 reviews"** boundary — after a review pass completes (the `<!-- review-epic:reviewed-at -->`
 dedup marker is posted) and one or more un-reviewed targets remain in the tick's queue.
 Same end-the-wake rule as workers: print the prompt, end the tick; the dedup markers

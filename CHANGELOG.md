@@ -15,6 +15,22 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-06-14
+
+### Changed
+
+- **`review-epic` + `review-epic-gh` correctness sweep** (PATCH — ST-4 of the plugin review remediation, parent #47; SKILL prose + shared helper only, no `allowed-tools` changes). The two sibling reviewers were kept in lockstep section-by-section; fixes differ only on tracker-specific lines (Linear MCP / GitLab `glab` vs GitHub `gh`):
+  - **Review now pinned to the reviewed SHA (both, multiple sites).** Phase 3 step 1 re-reads HEAD alongside the diff and aborts the pass with `[head-moved]` (no marker) when it differs from the SHA Phase 2 selected; the pinned SHA flows through the GitHub review POST's `commit_id` and the GitLab `position` (built from the `diff_refs` captured with the diff, never a fresh read), and is the exact value written in the `<!-- review-epic:reviewed-at:<sha> -->` dedup marker — so a marker can never claim a SHA the review wasn't produced against. The Linear local-read path additionally asserts `git -C <workdir> rev-parse HEAD == <reviewed-sha>` before letting the reviewer read full files from the checkout — on mismatch it aborts `[head-moved]` or falls back to `gh api ?ref=<reviewed-sha>`, closing the gap where a stale workdir checkout could feed the reviewer bytes that don't match the marker's SHA.
+  - **`subagent_type: reviewer` → `subagent_type: abc:reviewer` (both).** Plugin agents register namespaced; the bare name does not resolve in a live session (smoke-tested once against `abc:reviewer`).
+  - **Reviewer input contract filled out (both Phase 3 step 2).** Now passes platform + PR/MR ref, the contents of `<workdir>/.claude/review-rules.md` when present, and full files for every touched path. Working-directory handling diverges by platform: Linear states the absolute repo root in the prompt (local checkout exists); GitHub fetches full files via `gh api` for the reviewed SHA and instructs the reviewer **not** to attempt local reads (a cross-repo child may have no checkout).
+  - **Gate-then-post merge race closed (both).** After `AskUserQuestion` approval and immediately before each post, the target's state is re-checked; a target merged/closed in the interim is skipped with `[merged-before-post]` and no marker.
+  - **Missing post-failure guard copied into `-gh`.** A 4xx on posting now halts the pass **without** dropping the dedup marker, so the SHA is retried next tick (the Linear variant already had this).
+  - **`status:done` terminal clause deleted from `-gh`.** Termination keys on `state=closed` only — the label was fiction.
+  - **Zombie-loop-on-fetch-failure distinguished (both).** A permanent parent-read failure (404/410/not-found) runs Phase 5 termination + `CronDelete`; a transient one (timeout/5xx/auth) halts-and-retries, surfacing `stalled on same error; run /loop cancel` once when it repeats. `-gh` previously specified nothing here.
+  - **Terminal marker scan now finds the markers (both Phase 5).** The terminal tick re-runs Phase 2 enumeration with state filters dropped (all children, `--state all`) — by termination every reviewed child PR/MR is merged/closed, so the default open-only enumeration found nothing to summarize.
+  - **Phase 6 output contract completed.** `review-epic` gains example lines for the remaining Phase 0.7 skip categories (`[no-workdir]`, `[unknown-platform]`); both variants document the new `[head-moved]` and `[merged-before-post]` skip states.
+  - **`_shared/compact-on-merge.md` staleness fixed.** `review-epic` is shipped, not "planned" — consumer list and the Reviewers trigger-boundary section updated.
+
 ## [0.9.4] - 2026-06-13
 
 ### Changed
@@ -261,6 +277,7 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
 [Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.5...HEAD
+[0.9.5]: https://github.com/semanticpixel/abc/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/semanticpixel/abc/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/semanticpixel/abc/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/semanticpixel/abc/compare/v0.9.1...v0.9.2
