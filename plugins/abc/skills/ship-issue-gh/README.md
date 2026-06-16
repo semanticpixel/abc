@@ -35,6 +35,20 @@ This skill ships as part of the `abc` plugin marketplace — see the [top-level 
 
 `gh` version 2.40 or newer is required for reliable `--json body` support on `gh issue view`. The skill version-checks on its first wake and blocks if older.
 
+### Review-bot allowlist (optional)
+
+When the skill addresses PR feedback (the `fixing` state), it distinguishes **code-review-bot findings** from **human reviewer comments** by matching the comment author against an allowlist. With no config it uses a built-in default set (`dependabot[bot]`, `renovate[bot]`, `github-actions[bot]`, and common code-review bots).
+
+To recognize additional bots — e.g. an employer-specific review bot — create `~/.claude/review-bots.md` (user-local, **not** committed to any repo):
+
+```
+# ~/.claude/review-bots.md — one bot login per line; blank lines and #-comments ignored
+acme-review-bot
+my-org-linter[bot]
+```
+
+Any author not in the allowlist (and not in the default set) is treated as a human reviewer. This keeps employer-specific bot names out of the published plugin.
+
 ### Issue conventions
 
 To drive an issue into a specific repo (when invoking from a parent cwd containing multiple repos), tag it with a `repo:<name>` label where `<name>` matches the target subdirectory.

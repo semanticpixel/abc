@@ -157,7 +157,7 @@ For **each** item in the list — including each sub-issue when the input was a 
      anything else            → blocked-user (unknown platform)
    ```
 
-5. Confirm the CLI is authed: `gh auth status` or `glab auth status`. If not, `blocked-user` with the auth command to run.
+5. Confirm the CLI is authed: `gh auth status` (GitHub) or `glab auth status --hostname <host>` (GitLab). Derive `<host>` from the `ABC_GITLAB_HOST` env var if set, else parse it from `git remote get-url origin`; fall back to bare `glab auth status` if no GitLab remote resolves. Never hardcode a GitLab hostname. If not authed, `blocked-user` with the auth command to run.
 
 **Cache** the resolved `{workdir, platform, cli}` tuple per ticket for this invocation. Re-resolution on the next `/loop` wake is cheap and handles the case where the user added/removed a label mid-flight.
 
@@ -306,7 +306,7 @@ Do **not** push new commits, re-classify, re-evaluate CI state, or merge here. A
 Entered from Phase 3 row 3 (new review comments) or row 3a (failing assertion CI check). This handler is invoked *by* Phase 3.5 sub-phase B step 4, not alongside it — Phase 3.5 dispatches into this handler and observes whether execution reaches step 6 below. The handler itself never reads or writes `failcount:<key>=N` comments; Phase 3.5 writes the increment only after observing a clean step-6 return. If this handler exits via `blocked-user` or `failed` before step 6, no increment is written for this wake.
 
 1. Use the check statuses and review comments gathered in Phase 3 — do not call `gh pr checks` / `glab ci view` or the comments API again. For each failing assertion CI check, fetch its **log output** now (e.g. `gh run view <run-id> --log-failed`, or `glab ci trace <job-id>`); logs were not retrieved in Phase 3, and this log fetch is the only additional network call this handler performs. Classify each item:
-   - **code-review-bot finding** (author = the bot account or the well-known comment prefix).
+   - **code-review-bot finding** — the comment author's login (or a recognizable bot comment prefix) matches the **review-bot allowlist**: resolve it from `~/.claude/review-bots.md` if that file exists (one bot login per line; blank lines and `#`-comments ignored), otherwise use the built-in default set (`dependabot[bot]`, `renovate[bot]`, `github-actions[bot]`, and common code-review bots). An author matching neither the allowlist nor the default set is treated as a **human reviewer comment**, not a bot finding — never hardcode a specific employer's bot name here; it belongs in the user's local `~/.claude/review-bots.md`. See the README's *Review-bot allowlist* section for the file format.
    - **Human reviewer comment.**
    - **Failing assertion-style CI check** — drive the fix from the check's output.
    - **Scope-creep comment** (request for functionality outside the ticket's acceptance criteria) → `blocked-user` with reason `scope-creep`.

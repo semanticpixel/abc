@@ -35,10 +35,26 @@ This skill ships as part of the `abc` plugin marketplace — see the [top-level 
 | CLI | Required for | Auth check |
 |-----|--------------|------------|
 | `gh` | GitHub repos | `gh auth status` |
-| `glab` | GitLab repos | `glab auth status` |
+| `glab` | GitLab repos | `glab auth status --hostname <host>` |
 | `git` | Every repo | — |
 
 Install whichever you need for the platforms you'll drive. The skill blocks on `blocked-user` if the required CLI is missing or unauthed.
+
+The GitLab `<host>` is derived per-repo (never hardcoded): the `ABC_GITLAB_HOST` env var if set, else parsed from `git remote get-url origin`, falling back to bare `glab auth status` if no GitLab remote resolves.
+
+### Review-bot allowlist (optional)
+
+When the skill addresses review feedback (the `fixing` state), it distinguishes **code-review-bot findings** from **human reviewer comments** by matching the comment author against an allowlist. With no config it uses a built-in default set (`dependabot[bot]`, `renovate[bot]`, `github-actions[bot]`, and common code-review bots).
+
+To recognize additional bots — e.g. an employer-specific review bot — create `~/.claude/review-bots.md` (user-local, **not** committed to any repo):
+
+```
+# ~/.claude/review-bots.md — one bot login per line; blank lines and #-comments ignored
+acme-review-bot
+my-org-linter[bot]
+```
+
+Any author not in the allowlist (and not in the default set) is treated as a human reviewer. This keeps employer-specific bot names out of the published plugin.
 
 ### Linear labels
 

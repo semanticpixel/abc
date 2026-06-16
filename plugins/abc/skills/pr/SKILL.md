@@ -72,7 +72,7 @@ Wait for the answer before staging anything.
 
 ### 3. Pre-flight: verify auth and clean working state
 
-- For GitLab: `glab auth status`. For GitHub: `gh auth status`.
+- For GitLab: `glab auth status --hostname <host>`, where `<host>` is the **derived GitLab host** — take the `ABC_GITLAB_HOST` env var if set, otherwise parse the host out of `git remote get-url origin` (the `<host>` in `git@<host>:…` or `https://<host>/…`). If no GitLab remote resolves, fall back to bare `glab auth status`. Never hardcode a specific GitLab hostname. For GitHub: `gh auth status`.
 - If auth is expired, surface the exact re-auth command and stop. Do not try to work around it.
 - If there's a `.env` file in the diff with what looks like a literal secret (not a 1Password ref), flag it and stop.
 

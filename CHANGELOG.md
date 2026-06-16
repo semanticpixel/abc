@@ -15,6 +15,16 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.9.7] - 2026-06-16
+
+### Changed
+
+- **De-Grammarly the plugin — portability + config mechanisms** (PATCH — ST-6 of the plugin review remediation, parent #47). Removes employer-specific assumptions from the published skills and replaces them with derivation or user-local config. No `allowed-tools` changes (`Bash(glab auth status:*)` already permits `--hostname`).
+  - **GitLab host is derived, never hardcoded.** Every prose `glab auth status` site (`pr`, `ship-issue`, `review-epic`, `review-sweep`) now uses `glab auth status --hostname <host>`, where `<host>` is the `ABC_GITLAB_HOST` env var if set, else parsed from `git remote get-url origin`, falling back to bare `glab auth status` when no GitLab remote resolves.
+  - **Review-bot identity via allowlist.** Both `fixing` handlers (`ship-issue`, `ship-issue-gh`) now classify a comment as a code-review-bot finding by matching the author against a **review-bot allowlist** — `~/.claude/review-bots.md` if present (one login per line; `#`-comments ignored), else a built-in default set (`dependabot[bot]`, `renovate[bot]`, `github-actions[bot]`, common code-review bots). Unknown authors are treated as human reviewers. Employer-specific bot names live in the user's local file, never the repo. File format documented in both READMEs.
+  - **Neutral fixtures in `review-sweep`.** The internal `eng/super-funnel!231` / `rules/single_dir.yaml` dashboard examples are replaced with neutral `acme/api!231` / `config/thresholds.yaml`.
+  - AC: `grep -riE 'grammarly|hackermango|super-funnel' plugins/` returns zero hits.
+
 ## [0.9.6] - 2026-06-16
 
 ### Changed
@@ -292,6 +302,7 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
 [Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.5...HEAD
+[0.9.7]: https://github.com/semanticpixel/abc/compare/v0.9.6...v0.9.7
 [0.9.6]: https://github.com/semanticpixel/abc/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/semanticpixel/abc/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/semanticpixel/abc/compare/v0.9.3...v0.9.4

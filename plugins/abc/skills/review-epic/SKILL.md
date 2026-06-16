@@ -92,7 +92,7 @@ For each **open** sub-issue, resolve where its PR/MR lives — same `repo:` labe
 1. Collect label names starting with `repo:`. Exactly one expected; `0` → skip the child this tick with a `[no-repo-label]` line in the output; `2+` → same skip, noting the ambiguity.
 2. Extract `<name>` from `repo:<name>` → workdir is the `<cwd>/<name>/` subdirectory. Missing subdir → skip with a `[no-workdir]` line.
 3. Detect the platform from `git -C <workdir> remote get-url origin`: contains `github.com` → `gh`; contains `gitlab.<host>` → `glab`; anything else → skip with `[unknown-platform]`. **Capture the repo identity from the same remote URL**: GitHub → `<owner>/<repo>`; GitLab → the project path (e.g. `group/subgroup/project`).
-4. Confirm CLI auth (`gh auth status` / `glab auth status`) once per platform per tick. Not authed → halt with the auth command — a reviewer that can read but not post would burn the dedup-free review work every tick.
+4. Confirm CLI auth (`gh auth status` / `glab auth status --hostname <host>`) once per platform per tick. Derive the GitLab `<host>` from the `ABC_GITLAB_HOST` env var if set, else parse it from `git remote get-url origin`; fall back to bare `glab auth status` if no GitLab remote resolves (never hardcode a GitLab hostname). Not authed → halt with the auth command — a reviewer that can read but not post would burn the dedup-free review work every tick.
 
 Skipped children are **not** errors — this skill is review-only, so it degrades by narrowing coverage and saying so, rather than halting the whole loop the way a worker must. Cache the `{workdir, platform, cli, repo}` tuple per child for this tick; re-resolve fresh next tick.
 

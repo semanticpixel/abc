@@ -282,7 +282,7 @@ Do **not** push new commits, re-classify, re-evaluate CI state, or merge here. A
 Entered from Phase 3 row 3 (new review comments) or row 3a (failing assertion CI check). Invoked *by* Phase 3.5 sub-phase B step 4 — Phase 3.5 dispatches into this handler and observes whether execution reaches step 6.
 
 1. Use the check statuses and review comments gathered in Phase 3. For each failing assertion check, fetch its **log output** now (`gh run view <run-id> --log-failed --repo <owner>/<repo>`). Classify each item:
-   - **code-review-bot finding** (author = the bot account or the well-known comment prefix).
+   - **code-review-bot finding** — the comment author's login (or a recognizable bot comment prefix) matches the **review-bot allowlist**: resolve it from `~/.claude/review-bots.md` if that file exists (one bot login per line; blank lines and `#`-comments ignored), otherwise use the built-in default set (`dependabot[bot]`, `renovate[bot]`, `github-actions[bot]`, and common code-review bots). An author matching neither the allowlist nor the default set is treated as a **human reviewer comment**, not a bot finding — never hardcode a specific employer's bot name here; it belongs in the user's local `~/.claude/review-bots.md`. See the README's *Review-bot allowlist* section for the file format.
    - **Human reviewer comment.**
    - **Failing assertion-style CI check** — drive the fix from the check's output.
    - **Scope-creep comment** (request for functionality outside the issue body's acceptance criteria) → `blocked-user` with reason `scope-creep`.

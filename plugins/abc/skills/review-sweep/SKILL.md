@@ -76,7 +76,7 @@ Scan every open PR/MR you authored across GitHub and GitLab, fetch unresolved re
 
 Run auth pre-flight in parallel for the targeted platforms:
 - GitHub: `gh auth status` — if not authed, skip GitHub scan and surface the re-auth command.
-- GitLab: `glab auth status` — same fallback.
+- GitLab: `glab auth status --hostname <host>` — same fallback. Derive `<host>` from the `ABC_GITLAB_HOST` env var if set, else parse it from `git remote get-url origin`; fall back to bare `glab auth status` if no GitLab remote resolves (never hardcode a GitLab hostname).
 
 If both fail, abort with the re-auth commands. Don't degrade silently.
 
@@ -233,9 +233,9 @@ After all triage subagents return, print a per-PR/MR dashboard. Phase 1.5 health
        "Should this handle the empty state differently?"
     skipped (noise): 2
 
-[2] eng/super-funnel!231  "Auto-approve threshold tuning"
+[2] acme/api!231  "Auto-approve threshold tuning"
     health: ✓ mergeable (no rebase needed)
-    └─ rules/single_dir.yaml:14  [question, high]
+    └─ config/thresholds.yaml:14  [question, high]
        "Why 0.6 not 0.7?"
 
 [3] acme/web#4530  "Sidebar navigation refactor"
@@ -296,7 +296,7 @@ Surface each PR/MR's status after processing:
 
 ```
 [1] acme/web#4521  ✓ 2 fixes applied, pushed <SHA>, 2 threads replied
-[2] eng/super-funnel!231  — skipped (only question, no fixable items)
+[2] acme/api!231  — skipped (only question, no fixable items)
 ```
 
 ### Phase 6: Report judgment-required and questions
@@ -310,7 +310,7 @@ Needs your attention:
     "Should this handle the empty state differently?"
     Triage rationale: design decision needed — depends on whether empty is a valid runtime state.
 
-[2] eng/super-funnel!231  rules/single_dir.yaml:14
+[2] acme/api!231  config/thresholds.yaml:14
     "Why 0.6 not 0.7?"
     Triage rationale: a reply with reasoning would close the thread.
 ```
