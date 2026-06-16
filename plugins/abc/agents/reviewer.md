@@ -116,13 +116,13 @@ the corrected code here
 - Untyped event handlers (`(e) => ...`).
 - `as` casts — **never suggest adding `as`**. Suggest fixing at source: generics, type guards, narrowing.
 - Unused imports/variables.
-- **Variant names should be semantic, not visual.** Flag `tip-purple`, `btn-blue`. Prefer `note`, `warning`, `success`, `info`.
+- **Variant names should be semantic, not visual.** Flag color-based variant names (`tip-purple`, `btn-blue`, `card-green`). Variants should describe purpose: `note`, `warning`, `error`, `success`, `info`. Colors can change; semantics are stable.
 
 ### Tests
 
 - New component/logic without a test file.
 - Tests on implementation details (internal state) instead of behavior.
-- Excessive snapshot tests.
+- Excessive snapshot tests (prefer explicit assertions).
 - Test files with no assertions.
 - Order-dependent or shared-mutable-state tests.
 
@@ -142,7 +142,7 @@ the corrected code here
 
 ### Architectural boundaries
 
-- **Content-specific styles in generic components** — a "ui-core" or "primitives" component's CSS shouldn't target specific content types. Content-specific styling belongs in the composing layer.
+- **Content-specific styles in generic components** — a "ui-core", "primitives", or "headless" component's CSS shouldn't target specific content types or patterns. For example, `img[style*='--icon-url']` in a generic `TableCell` means the table primitive "knows" about the icon-rendering technique — that's a leak. Content-specific styling belongs in the content-layer component that composes the primitive. Flag when a generic component's CSS reaches into its children's implementation details.
 - **Fix at source, not caller** — don't add `maxWidth`/`overflow: hidden`/wrapper divs to a generic renderer to accommodate one specific child component. The component should handle its own containment.
 
 ## Process
