@@ -15,6 +15,21 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-06-16
+
+### Changed
+
+- **`review` + `review-sweep` + reviewer/triage agent-contract correctness sweep** (PATCH — ST-5 of the plugin review remediation, parent #47). Single-sources the review rulebook, makes the skill↔agent contracts true, and fixes `review-sweep`'s approval-gate and platform bugs. `review/SKILL.md` gains `Agent` in `allowed-tools`; no other tool-scope changes.
+  - **Universal review rulebook single-sourced.** The full rule list lived in *both* `review/SKILL.md` and `reviewer.md` and had already drifted. `/abc:review` now dispatches the `abc:reviewer` subagent (passing the diff, full files, platform, head ref, and `.claude/review-rules.md` inline) instead of inlining the rules; the inlined copy is deleted. `reviewer.md` is now the **single** rulebook (a distinctive rule phrase greps to one file). Its orchestrator list is corrected to name the real callers — `review`, `review-epic`, `review-epic-gh` (not `review-sweep`, which only dispatches `triage`). The richer rationale/actionability from the deleted `review/SKILL.md` copies (hardcoded-color token-override guidance, "specificity bomb" for ID selectors, the token-semantic/primitive-misuse explanations) was back-ported into `reviewer.md` so the consolidation is lossless in *detail*, not just coverage.
+  - **`subagent_type` namespacing.** `review-sweep` Phase 3 now dispatches `subagent_type: abc:triage` (was the bare `triage`, which doesn't resolve in a live plugin session); the Phase 3 heading no longer claims it dispatches `reviewer`.
+  - **Approval-gate hard rules made real.** Hard rule #1 is rewritten with an explicit scoped exception — review-*thread* fixes always require the Phase 4→5 gate; the Phase 1.5 health pre-pass is the sole exception, limited to rebases and one-shot CI repairs. Phase 1.5b's CI-repair commit is now **staged locally** and rendered in the dashboard as `ci-fixed (staged) — ready to push — approve?`, force-pushed only on Phase 5 approval (rebases, which change no content, still push in-pass). Replying is folded into the Phase 4 gate option text (`Apply all fixable fixes and reply 'Fixed in <SHA>' to each thread`) so no posting/replying/pushing path exists without an `AskUserQuestion` option that covers it.
+  - **Triage bucketing fixed.** `noise` is rendered as a collapsed `skipped (noise): N` count (was dropped); any `confidence: low` result is re-mapped to `judgment-required` before bucketing (the `triage` contract required this but nothing enforced it). The dashboard spec now covers all five triage categories. The misclassified dashboard example is corrected (hardcoded-color → `fixable-code`; a JSDoc typo is the `fixable-doc` exemplar).
+  - **GitHub thread resolution is now real.** Phase 2 fetches review threads via `gh api graphql` (`reviewThreads { isResolved }`) and filters `isResolved: false`; the old "author replied 'Done'" heuristic is demoted to a secondary fallback.
+  - **Workdir resolution defined once.** A single rule (remote-URL match against cwd subdirectories → known mapping → escalate) replaces the two contradictory definitions; the bogus `repo:` label mention is deleted (that convention is `ship-*`-only). No-clone behavior is dashboard-escalate in Phase 1.5 (never prompts); prompting is allowed only in user-confirmed Phase 5.
+  - **Platform detection gaps closed (`review`).** Bare-number input checks the `upstream` remote before `origin` (fork workflows); a "neither pattern matched" terminal `AskUserQuestion` fallback is added.
+  - **GitLab identity de-ambiguated.** `review-sweep` Phase 1 prefers an MCP-native authenticated-user call over scraping `glab auth status`, and specifies host selection when multiple hosts are authed.
+  - **Agent-contract contradictions fixed.** `triage.md` drops the unsatisfiable "resolved by a later push" noise criterion (it has no commit history in its inputs) and adds an advisory-only caveat for local Grep/Read (cwd may not match the PR branch). `reviewer.md` calls its output a "YAML list" (was "JSON-like"), states all inputs arrive inline (local reads only when the orchestrator confirms a checkout), and reconciles "end with a one-line summary" against "no closing remarks". `review/SKILL.md` is retitled `# /abc:review` and its trigger phrasing uses `/abc:review`.
+
 ## [0.9.5] - 2026-06-14
 
 ### Changed
@@ -277,6 +292,7 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
 [Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.5...HEAD
+[0.9.6]: https://github.com/semanticpixel/abc/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/semanticpixel/abc/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/semanticpixel/abc/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/semanticpixel/abc/compare/v0.9.2...v0.9.3

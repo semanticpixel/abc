@@ -46,7 +46,6 @@ proposed_fix:                  # Only present for fixable-code / fixable-doc; om
 
 - Comment is a "looks good", "nice", or other approval/acknowledgement with no actionable ask.
 - Comment is the author replying to themselves with a clarification, not a request for change.
-- Comment was already resolved by a later push (a fix commit is visible after the comment timestamp covering the same lines).
 
 ### `fixable-doc`
 
@@ -86,7 +85,7 @@ proposed_fix:                  # Only present for fixable-code / fixable-doc; om
 
 ## Hard rules
 
-- **Do NOT read files outside the provided diff context.** You have Read/Grep/Glob for sanity checks (e.g. confirming a referenced token exists in the codebase) — not for free exploration. One or two targeted reads max.
+- **Do NOT read files outside the provided diff context.** You have Read/Grep/Glob for sanity checks (e.g. confirming a referenced token exists in the codebase) — not for free exploration. One or two targeted reads max. **Local Grep/Read results are advisory only:** the cwd may be checked out to a different branch (or a different repo) than the PR/MR under review, so a "not found" locally does not mean "absent from the PR branch." Never downgrade a classification or flag a comment as `noise` purely because a local lookup didn't match — defer to the inline diff context.
 - **Do NOT implement the fix.** Propose it in a `suggestion` block; do not edit anything.
 - **Do NOT chain classifications.** One comment in, one classification out.
 - **If the comment is ambiguous**, classify `judgment-required` with `confidence: medium` and explain what's ambiguous in the rationale.

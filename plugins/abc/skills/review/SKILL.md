@@ -1,9 +1,10 @@
 ---
 name: review
-description: Review a GitHub PR or GitLab MR with craft-level attention to semantic HTML, CSS architecture, accessibility, TypeScript patterns, and code quality. Auto-detects platform from URL or git remote. Proposes inline diff comments, shows them for approval, only posts what the user approves. TRIGGER when the user says "/review", "review this PR/MR", "review <url>", or passes a PR/MR number.
+description: Review a GitHub PR or GitLab MR with craft-level attention to semantic HTML, CSS architecture, accessibility, TypeScript patterns, and code quality. Auto-detects platform from URL or git remote. Proposes inline diff comments, shows them for approval, only posts what the user approves. TRIGGER when the user says "/abc:review", "review this PR/MR", "review <url>", or passes a PR/MR number.
 argument-hint: "<pr-url> | <mr-url> | <number>"
 model: opus
 allowed-tools:
+  - Agent
   - Read
   - Grep
   - Glob
@@ -21,7 +22,7 @@ allowed-tools:
   - mcp__gitlab__discussion_list
 ---
 
-# /review
+# /abc:review
 
 Review a GitHub **pull request** or GitLab **merge request** with craft-level attention to semantic HTML, CSS architecture, accessibility, TypeScript patterns, and code quality. Auto-detects platform. Proposes inline diff comments, shows them for approval, posts only what the user approves.
 
@@ -37,8 +38,9 @@ Platform detection in order:
 
 1. **URL with `github.com`** → `platform = github`
 2. **URL with `gitlab.` host** (e.g. `gitlab.com`, self-hosted GitLab) → `platform = gitlab`
-3. **Bare number** (e.g. `123`) → run `git remote get-url origin` in cwd; same rules as above against the remote URL. If cwd is not in a git repo → ask the user for a URL.
+3. **Bare number** (e.g. `123`) → resolve the remote URL, then apply rules 1–2 against it. Check `git remote get-url upstream` **first** (fork workflows push the PR/MR to the canonical `upstream` repo, not the contributor's `origin` fork); fall back to `git remote get-url origin` if no `upstream` remote exists. If cwd is not in a git repo, or neither remote resolves → ask the user for a URL.
 4. **No arguments** → ask for the PR/MR URL or number.
+5. **Neither pattern matched** (an argument was passed but it's neither a recognizable URL nor a bare number, e.g. a branch name or freeform text) → terminal fallback: use `AskUserQuestion` to ask the user for the PR/MR URL or number directly. Do not guess.
 
 Once platform is determined, verify CLI auth:
 - GitHub: `gh auth status` — if not authed, surface the exact command and stop.
@@ -134,36 +136,26 @@ Also fetch **related context files** to understand usage:
 
 ## Phase 3 — Analyze & generate comments
 
-Apply the universal rules (below) plus any repo-specific rules to each diff hunk. For every issue found, generate a comment with:
+Dispatch the **`abc:reviewer`** subagent (the `Agent` tool with `subagent_type: abc:reviewer`) — it owns the universal review rulebook, volume scaling, comment tone, the actionable-comments-only rule, and the suggestion-block format. This skill does **not** inline those rules; `reviewer.md` is the single source of truth for them.
+
+Pass everything the reviewer needs **inline in the prompt** (the agent has no platform access — it cannot fetch anything itself):
+
+- The unified diff (per-file hunks with line numbers) from Phase 1.
+- The full files at HEAD gathered in Phase 2, for context.
+- The platform (`github` / `gitlab`) and the PR/MR identifier — context only.
+- The head ref/SHA (`headRefOid` for GitHub, `head_sha` for GitLab) so line anchoring is unambiguous.
+- The contents of `.claude/review-rules.md` if it was found in Phase 0 (repo-specific overrides that **augment** the universal rules).
+
+The subagent returns a structured YAML list of proposed comments, one per issue on a new/changed line, each carrying:
 
 - **severity**: `error` | `warning` | `nit` | `question`
 - **category**: `a11y` | `css` | `typescript` | `test` | `quality` | `security`
 - **file**: the new path of the file
-- **line**: the line number in the new file (for additions/modifications) or old file (for deletions)
-- **side**: `new` (for added/modified lines) or `old` (for removed lines)
-- **body**: the comment text
+- **line**: the line number in the new file (additions/modifications) or old file (deletions)
+- **side**: `new` (added/modified lines) or `old` (removed lines)
+- **body**: the comment text (with a `suggestion` block when there's a concrete fix)
 
-### Actionable comments only
-
-**Every comment must include a concrete fix or a specific question.** If you identify a potential issue but have no actionable suggestion (no code fix, no alternative approach, no specific question to ask), do not post the comment. "This could break someday" without a proposed solution is noise, not signal.
-
-### Comment tone
-
-Adapt tone by severity:
-- **error**: Direct and clear. "This needs to change because..."
-- **warning**: Suggestive. "Consider using X instead of Y because..."
-- **nit**: Gentle. "Minor: could use X here for consistency"
-- **question**: Curious. "Is this intentional? I'd expect X because..."
-
-### Suggestion blocks
-
-When you have a concrete fix, use the platform's suggestion syntax (both GitHub and GitLab support the same fenced block):
-
-````
-```suggestion
-the corrected code here
-```
-````
+(The exact output contract lives in the `reviewer` agent definition — match it when parsing the result for Phases 4–5.)
 
 ### Deduplicate
 
@@ -272,77 +264,3 @@ Posted {N}/{total} comments on {PR/MR title}
 
 {link to PR/MR}
 ```
-
----
-
-## Universal review rules
-
-Apply these to all PRs/MRs regardless of platform or repo. Repo-specific rules from `.claude/review-rules.md` **augment** these — they do not replace them.
-
-### Semantic HTML & accessibility
-
-- `<div>` or `<span>` used where a semantic element fits: `<nav>`, `<main>`, `<section>`, `<article>`, `<aside>`, `<header>`, `<footer>`, `<figure>`, `<figcaption>`, `<time>`, `<mark>`
-- Unnecessary wrapper `<div>` that exists only for styling and could be removed. Also flag wrapper elements whose only purpose is setting an inheritable CSS property (like `color`) — if the property can be set on the parent and inherited by children, the wrapper is unnecessary DOM bloat.
-- `onClick` on a `<div>` or `<span>` — must be a `<button>` (for actions) or `<a>` (for navigation). If truly needed on a non-interactive element, require `role`, `tabIndex`, and `onKeyDown`.
-- Missing keyboard support: interactive elements without `onKeyDown` or `onKeyUp` handlers.
-- `:focus` used instead of `:focus-visible` (`:focus` shows focus rings on mouse click too).
-- Missing ARIA: icon-only buttons without `aria-label`, toggles without `aria-expanded`, dialogs without `aria-modal`.
-- `cursor: pointer` on `<button>` — browsers already handle this, it's unnecessary.
-- Missing disabled state styling or `aria-disabled`.
-- Images without meaningful `alt` text (empty `alt=""` is fine for decorative images).
-
-### CSS
-
-- **Hardcoded colors** (hex, rgb, hsl, named colors) — always flag. Must use design tokens. This is the single most common issue. When flagging, advise the author to use the existing token from the theme. If the existing token value doesn't match the desired color, the variable should be overridden within component scope following the repo's color scheme conventions (check repo rules for specifics). Do NOT suggest adding new tokens to theme files — defer to repo rules for how overrides should work.
-- `!important` — almost always a code smell. Flag it.
-- ID selectors (`#foo`) in stylesheets — specificity bomb, use classes.
-- Deep nesting (>3 levels of selectors) — hard to override, refactor.
-- Inline `style={{}}` — flag unless it's setting dynamic values (position, transform, CSS custom properties).
-- `transition: all` — specify the exact property for performance and intentionality.
-- Animations missing `prefers-reduced-motion` media query.
-- Animations on layout-triggering properties (`width`, `height`, `top`, `left`, `margin`) — prefer `transform` and `opacity`.
-- `z-index` without a comment explaining the stacking context.
-- **Physical properties** — use CSS logical equivalents for RTL/internationalization support. Flag `margin-left`/`margin-right` → `margin-inline-start`/`margin-inline-end`, `padding-left`/`padding-right` → `padding-inline-start`/`padding-inline-end`, `left`/`right`/`top`/`bottom` → `inset-inline-start`/`inset-inline-end`/`inset-block-start`/`inset-block-end`, `border-left`/`border-right` → `border-inline-start`/`border-inline-end`. For `width`/`height` → `inline-size`/`block-size`, treat as a gentle recommendation (nit), not a warning — these are less widely adopted and can confuse developers. Exception: physical properties are acceptable when the direction is truly physical (e.g. a visual effect anchored to the screen edge, a `transform` offset).
-- **Token semantic misuse** — using a token outside its intended purpose is as bad as hardcoding. For example, `--color-action-*` tokens are for interactive/clickable elements; using them for static text color is a semantic mismatch. Flag when a token's name clearly indicates a different purpose than how it's being used.
-- **Primitive token misuse** — raw primitive/scale tokens (`--neutral-10`, `--white`, `--black`, `--green-50`, etc.) used directly in component styles when a semantic token exists (`--color-bg-primary`, `--color-bg-secondary`, `--color-text-primary`, etc.). Primitives describe *what the color is*; semantics describe *what it's for*. Components should use semantics so themes work correctly. Exception: primitive tokens are acceptable inside `light-dark()` calls where you're explicitly defining the light/dark pair.
-- **Prefer `light-dark()` over `[data-color-scheme]` nesting** — when a property has adjacent light and dark values defined via `[data-color-scheme='dark'] &` or `[data-color-scheme='light'] &` selectors, prefer the `light-dark(light-value, dark-value)` CSS function instead. It's more concise, avoids selector nesting, and keeps the light/dark relationship co-located.
-- **Redundant dark-mode selectors** — semantic design tokens (e.g. `--color-action-primary`, `--color-bg-primary`, `--color-text-*`) already switch values between light and dark modes. Wrapping them in `[data-color-scheme='dark'] &` selectors is redundant — the token handles the mode switch. Flag when a `[data-color-scheme]` selector only changes a value that's already a mode-aware semantic token.
-- Magic numbers for spacing/sizing without explanation.
-
-### Components & TypeScript
-
-- Props type not exported, not named `{ComponentName}Props`, or uses `any`.
-- Props don't extend the appropriate HTML element type (`ComponentPropsWithRef<'button'>`, etc.). However, `ComponentPropsWithoutRef` is acceptable by default — only flag it if a ref is actively needed and missing. Teams upgrade to `WithRef` deliberately when the need arises.
-- Default exports — context-dependent. Check repo rules for exceptions (Next.js pages, Storybook stories). If no repo rules, flag as a question.
-- Missing return type on exported functions.
-- Untyped event handlers (`(e) => ...` without type annotation on `e`).
-- `as` type assertions — **never suggest adding `as` casts** as a fix. If types are wrong, suggest fixing at the source: generics, type guards, correct interfaces, or narrowing. Casting papers over the problem.
-- Unused imports or variables.
-- **Variant names should be semantic, not visual.** Flag color-based variant names (`tip-purple`, `btn-blue`, `card-green`). Variants should describe purpose: `note`, `warning`, `error`, `success`, `info`. Colors can change; semantics are stable.
-
-### Tests
-
-- New component or logic without a corresponding test file.
-- Tests that check implementation details (internal state, private methods) instead of behavior.
-- Excessive snapshot tests (prefer explicit assertions).
-- Test files with no assertions (just rendering).
-- Tests that depend on execution order or share mutable state.
-
-### Code quality
-
-- **Bugs**: logic errors, off-by-one, null/undefined access without guards.
-- **Security**: `dangerouslySetInnerHTML` without sanitization, URL injection, XSS vectors.
-- Misleading variable/function names that don't match behavior.
-- Commented-out code (should be deleted, not commented).
-- Dead code / unused exports.
-- `console.log` statements left in production code.
-- Inconsistency with surrounding code patterns.
-
-### Layout utilities
-
-- If the repo has layout components (`Row`, `Column`, `Stack`, `Flex`) or utility classes, prefer them over custom CSS for simple flex layouts that don't need media queries. Defer to repo rules for specifics.
-
-### Architectural boundaries
-
-- **Content-specific styles in generic components** — if a component lives in a "ui-core", "primitives", or "headless" layer (i.e. it's meant to be generic and reusable), its CSS should not contain selectors that target specific content types or patterns. For example, `img[style*='--icon-url']` in a generic `TableCell` means the table primitive "knows" about the icon rendering technique — that's a leak. Content-specific styling belongs in the content-layer component that composes the primitive. Flag when a generic component's CSS reaches into its children's implementation details.
-- **Fix at source, not caller** — layout workarounds (`maxWidth`, `overflow: hidden`, wrapper divs for containment) added to generic/shared renderers to fix overflow or sizing caused by a specific child component. The fix should be scoped to the component that causes the issue, not applied broadly to the renderer that hosts all content types. Flag when a generic renderer is modified to accommodate a single new component — the component should handle its own containment.
