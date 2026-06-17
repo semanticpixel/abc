@@ -15,6 +15,15 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-06-17
+
+### Changed
+
+- **Extract duplicated blocks to `_shared/`** (PATCH — ST-8 of the plugin review remediation, parent #47; SKILL/DESIGN prose only, no `allowed-tools` changes). Five tracker-agnostic blocks that were duplicated across the ship family are now single-sourced as parameterized `_shared/` docs (the `compact-on-merge.md` pattern); consumers reference them at their original location instead of restating the rules.
+  - **New shared docs.** `_shared/cron-match.md` (consumed by `ship-issue`, `ship-issue-gh`, `ship-epic`, `ship-epic-gh` — parameterized by skill name + ID boundary class); `_shared/three-strikes-counter.md`, `_shared/rebase-attempt-and-gate.md`, `_shared/ui-reachability.md`, `_shared/skill-commit-marker.md` (consumed by the `ship-issue` pair — parameterized by tracker/CI vocabulary, failcount-key format, behind-base signal, and PR/MR wording). Each doc states its parameters explicitly at the top, with per-consumer values enumerated, so a consumer reference is one line.
+  - **`ship-issue/DESIGN.md`'s verbatim cron-rule copy** is now a pointer to `_shared/cron-match.md`; the other DESIGN.md references were design rationale (not operational duplicates) and stayed as-is.
+  - **Line reduction:** `ship-issue/SKILL.md` 459 → 390 (−69), `ship-issue-gh/SKILL.md` 424 → 359 (−65), with no semantic change (each extracted doc preserves the union of both variants' detail). This is below the issue's ≥120-line estimate: the five named blocks only sum to ~65–70 net lines per skill once pointers are accounted for, and closing the rest would require the prose compression the same acceptance criterion forbids ("no semantic change"). Prioritized fidelity over the line target.
+
 ## [0.10.0] - 2026-06-17
 
 ### Changed
@@ -313,6 +322,7 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
 [Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.5...HEAD
+[0.10.1]: https://github.com/semanticpixel/abc/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/semanticpixel/abc/compare/v0.9.7...v0.10.0
 [0.9.7]: https://github.com/semanticpixel/abc/compare/v0.9.6...v0.9.7
 [0.9.6]: https://github.com/semanticpixel/abc/compare/v0.9.5...v0.9.6
