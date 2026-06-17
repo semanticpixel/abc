@@ -15,6 +15,17 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-17
+
+### Changed
+
+- **`stay-awake` hook rework — TTL + pidfile model** (MINOR — ST-7 of the plugin review remediation, parent #47; hook contract change). Replaces the kill-on-`Stop` + `pkill -f` pattern-match design with a TTL + session-keyed pidfile design that actually protects `/loop` gaps.
+  - **`Stop` no longer kills protection during loop gaps.** Every handled activity event (`UserPromptSubmit`, `Stop`, `Notification`, `PostToolUseFailure`) now (re)spawns `caffeinate -t <TTL>` — default `900`s ≈ 2 loop intervals, overridable via `CLAUDE_ABC_AWAKE_TTL`. Wakefulness self-expires `<TTL>` after the *last* activity instead of being killed at end-of-turn, so the machine stays awake across the gap between a `Stop` and the next 6-minute `/loop` wake. `SessionEnd` remains the hard off-switch.
+  - **No more `$PPID` pattern-match fragility.** The spawned caffeinate PID is written to a session-keyed pidfile (`${TMPDIR}/claude-abc-awake-<session_id>.pid`, keyed off the hook payload's documented `session_id`). Dedup checks the recorded PID is alive (`kill -0`) before refreshing; teardown kills that exact PID. `pgrep -f` / `pkill -f` removed entirely — two concurrent Claude Code sessions now use distinct pidfiles and never kill each other's assertion.
+  - **Hook events verified against the published docs.** `PostToolUseFailure` and the `Notification` `idle_prompt` matcher are both real documented events/matchers, so `hooks.json` is unchanged. The old `PostToolUseFailure` handler read an `is_interrupt` field that is **not** documented; in the TTL model that branch is gone (the event simply refreshes the assertion like any other activity).
+  - **No more `eval` of env vars.** `CLAUDE_ABC_AWAKE_ON_ACTIVATE` / `CLAUDE_ABC_AWAKE_ON_DEACTIVATE` now run via `( bash -c "$VAR" & )` instead of `eval`; the README states explicitly that these variables execute as shell commands.
+  - AC: `shellcheck` clean; manual lifecycle test confirms the assertion survives a `Stop`, self-expires after the TTL, dies immediately on `SessionEnd`, and that two sessions don't kill each other's caffeinate.
+
 ## [0.9.7] - 2026-06-16
 
 ### Changed
@@ -302,6 +313,7 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
 [Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.5...HEAD
+[0.10.0]: https://github.com/semanticpixel/abc/compare/v0.9.7...v0.10.0
 [0.9.7]: https://github.com/semanticpixel/abc/compare/v0.9.6...v0.9.7
 [0.9.6]: https://github.com/semanticpixel/abc/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/semanticpixel/abc/compare/v0.9.4...v0.9.5
