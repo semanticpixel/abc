@@ -142,13 +142,16 @@ Background helpers that fire on Claude Code lifecycle events. No direct invocati
 
 | Hook | When it fires | What it does |
 |---|---|---|
-| `stay-awake` | `UserPromptSubmit` / `Stop` / `Notification` (idle) / `SessionEnd` / `PostToolUseFailure` (on interrupt) | Prevents macOS from sleeping during active Claude Code sessions. Critical for the autonomous-loop pattern: `/abc:ship-issue` and `/abc:ship-epic` self-arm a `/loop` that fires every 6 minutes and can run for hours — without sleep prevention, the loop dies when the screen sleeps or the lid closes. Uses `caffeinate -w $PPID` so the process auto-exits when Claude Code itself exits. macOS only — gracefully no-ops on other platforms. |
+| `stay-awake` | `UserPromptSubmit` / `Stop` / `Notification` (idle) / `PostToolUseFailure` / `SessionEnd` | Prevents macOS from sleeping during active Claude Code sessions. Critical for the autonomous-loop pattern: `/abc:ship-issue` and `/abc:ship-epic` self-arm a `/loop` that fires every 6 minutes and can run for hours — without sleep prevention, the loop dies when the screen sleeps or the lid closes. **TTL model:** every activity event (re)spawns a `caffeinate -t <TTL>` assertion (default 900s ≈ 2 loop intervals) tracked by PID in a session-keyed pidfile, so wakefulness *self-expires* `<TTL>` after the last activity rather than being killed at end-of-turn — this is what keeps the machine awake across the gap between a `Stop` and the next `/loop` wake. `SessionEnd` is the hard off-switch. Concurrent sessions use distinct pidfiles and never kill each other's assertion. macOS only — gracefully no-ops on other platforms. |
 
 Optional environment variables:
 
 - `CLAUDE_ABC_AWAKE_FLAGS` — flags passed to `caffeinate` (default: `-i -m -s` — prevents idle/disk/system sleep)
+- `CLAUDE_ABC_AWAKE_TTL` — assertion lifetime in seconds (default: `900` ≈ 2 loop intervals); wakefulness self-expires this long after the last activity event
 - `CLAUDE_ABC_AWAKE_ON_ACTIVATE` — shell command to run when stay-awake activates (e.g. a desktop notification)
 - `CLAUDE_ABC_AWAKE_ON_DEACTIVATE` — shell command to run when stay-awake deactivates
+
+> `CLAUDE_ABC_AWAKE_ON_ACTIVATE` and `CLAUDE_ABC_AWAKE_ON_DEACTIVATE` are executed as shell commands — set them only to values you trust. `ON_DEACTIVATE` is best-effort: it fires when an event actively tears the assertion down (a `Stop`-driven refresh that kills the prior process, or `SessionEnd`), but **not** on the normal silent TTL expiry — an event-driven hook sees no event at caffeinate's self-exit.
 
 ---
 
