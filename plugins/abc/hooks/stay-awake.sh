@@ -46,12 +46,18 @@ fire_deactivate() {
   [[ -n "${CLAUDE_ABC_AWAKE_ON_DEACTIVATE:-}" ]] && ( bash -c "$CLAUDE_ABC_AWAKE_ON_DEACTIVATE" >/dev/null 2>&1 & ) || true
 }
 
-# Read the pidfile's PID into REPLY if it names a live process; else clear it.
+# Read the pidfile's PID into REPLY if it names a live caffeinate process; else
+# clear it. The `comm`-name check guards against OS PID reuse: a stale pidfile
+# (SessionEnd never fired — crash, kill -9, reboot) can name a PID that the OS
+# has since reassigned to an unrelated process, and `kill -0` alone would treat
+# that as ours. Confirming the process is actually caffeinate before signalling
+# it keeps teardown from ever SIGTERM-ing the wrong process.
 live_pid() {
   REPLY=""
   [[ -f "$PIDFILE" ]] || return 0
   local pid; pid="$(cat "$PIDFILE" 2>/dev/null || true)"
-  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null \
+     && [[ "$(ps -p "$pid" -o comm= 2>/dev/null)" == *caffeinate ]]; then
     REPLY="$pid"
   fi
 }
@@ -68,7 +74,10 @@ refresh_awake() {
   # Intentional word splitting for flags.
   # shellcheck disable=SC2086
   nohup caffeinate $AWAKE_FLAGS -t "$TTL" </dev/null >/dev/null 2>&1 &
-  echo $! > "$PIDFILE"
+  # Guard the write: a read-only TMPDIR shouldn't abort the hook mid-refresh
+  # under `set -e` (the caffeinate above has already spawned); degrade to the
+  # same graceful no-op posture as the tool-availability guards up top.
+  { echo $! > "$PIDFILE"; } 2>/dev/null || true
   [[ "$was_live" -eq 0 ]] && fire_activate
 }
 

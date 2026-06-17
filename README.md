@@ -151,7 +151,7 @@ Optional environment variables:
 - `CLAUDE_ABC_AWAKE_ON_ACTIVATE` — shell command to run when stay-awake activates (e.g. a desktop notification)
 - `CLAUDE_ABC_AWAKE_ON_DEACTIVATE` — shell command to run when stay-awake deactivates
 
-> `CLAUDE_ABC_AWAKE_ON_ACTIVATE` and `CLAUDE_ABC_AWAKE_ON_DEACTIVATE` are executed as shell commands — set them only to values you trust.
+> `CLAUDE_ABC_AWAKE_ON_ACTIVATE` and `CLAUDE_ABC_AWAKE_ON_DEACTIVATE` are executed as shell commands — set them only to values you trust. `ON_DEACTIVATE` is best-effort: it fires when an event actively tears the assertion down (a `Stop`-driven refresh that kills the prior process, or `SessionEnd`), but **not** on the normal silent TTL expiry — an event-driven hook sees no event at caffeinate's self-exit.
 
 ---
 
