@@ -49,7 +49,7 @@ Drive an uncommitted change to an open PR (GitHub) or MR (GitLab) with the user'
 
 Run in parallel:
 - `git remote get-url origin` — detect platform from the host: a `gitlab.`-prefixed or otherwise GitLab host → GitLab; `github.com` (or a GitHub Enterprise host) → GitHub. If **neither pattern matches** (self-hosted, unknown host, or no remote), `AskUserQuestion` which platform to target — do not guess.
-- `git remote show origin` — read the **default branch** ("HEAD branch:" line) rather than assuming `main`/`master`/`develop`. Cache it as `<default>` for steps 3 and 5. If the remote can't be reached, fall back to `git symbolic-ref --short refs/remotes/origin/HEAD` then to `main`.
+- `git remote show origin` — read the **default branch** ("HEAD branch:" line) rather than assuming `main`/`master`/`develop`. Cache it as `<default>` for step 5 (and step 1's own "already on `<default>`" check). If the remote can't be reached, fall back to `git symbolic-ref --short refs/remotes/origin/HEAD` then to `main`.
 - `git status --porcelain` and `git branch --show-current` — see what's changed and where we are. Parse `??` entries: **untracked files are part of the change** and must be included in step-2 grouping and the step-6 description (they're easy to miss because they don't show in `git diff HEAD`).
 - `git diff --stat HEAD` and `git diff HEAD` — full picture of the **tracked** changes (staged + unstaged).
 - `git log -5 --oneline` — match the repo's commit message style.
