@@ -18,6 +18,8 @@ its Phase 3.5 escape-hatches section rather than restating the counter.
 | `<passing-bucket>` | how Phase 3 marks a check "passing" (drives the reset) | `ship-issue`: GitHub `bucket=pass` / GitLab `success` · `ship-issue-gh`: `bucket=pass` |
 | `<failcount-key>` | the per-check key in the marker | `ship-issue`: `<platform>:<check-name>` (e.g. `github:ci/test`, `gitlab:build/compile`) · `ship-issue-gh`: `github:<check-name>` (GitHub-only — no platform variation) |
 
+`<passing-bucket>` is deliberately a **single observed-pass value**, narrower than the `pr-open` merge-nudge's "green" set (which also accepts neutral/`skipping`): only an *actual pass* resets the counter (Sub-phase A step 3). Neutral / `skipping` / `cancel` do **not** reset it — do not widen this to match the merge-nudge's passing set, or the counter would silently go back down on a check that never actually passed.
+
 The marker namespace is `ship-issue:` for both consumers. The per-check "assertion vs
 infra" reclassification and the stale-CI freshness guard are defined in each consumer's
 Phase 3 rows 3a/3b supporting rules; this counter reads their result, it does not
