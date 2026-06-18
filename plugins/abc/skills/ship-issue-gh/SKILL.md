@@ -104,15 +104,7 @@ Identical contract to the Linear sibling's Phase 0.5 — the skill arms its own 
 
 ### Cron-entry match rule
 
-Defined once here, referenced by name in Phase 7's self-cancel — these two checks must stay in lockstep.
-
-> A `CronList` entry **matches** this invocation when its command string contains `<command-name> <raw-arg>` **followed by a word boundary** — the next character (if any) must NOT be alphanumeric, `-`, `,`, `/`, or `#`. `<command-name>` is the literal slash-command name Claude Code injects for this invocation (e.g. `/ship-issue-gh` when invoked top-level, or `/<plugin>:ship-issue-gh` when invoked through a plugin namespace — verify from the `<command-name>` tag Claude Code passes at invocation time, including on `/loop`-triggered wakes where the inner command name is still surfaced).
->
-> Reading the **actually-injected** name — rather than hardcoding `/ship-issue-gh` — is load-bearing for plugin-namespaced invocations: the hardcoded substring `/ship-issue-gh` is **not** present in `/abc:ship-issue-gh <raw-arg>` (the prefix is `/abc:`, not `/`), so the match always failed and every wake duplicate-armed a new cron.
->
-> **Fallback regex** when `<command-name>` isn't reachable (older Claude Code versions, edge cases): test the entry's command string against `(?:^|[^A-Za-z0-9])(?:[A-Za-z][A-Za-z0-9_-]*:)?ship-issue-gh <raw-arg>(?![A-Za-z0-9_,/#-])`. The optional `<plugin>:` prefix capture covers any plugin-namespacing scheme; the trailing negative-lookahead is the same boundary class as the strict rule. This still prevents `foo/bar#1` from false-matching an entry for `foo/bar#10` (prefix) or `foo/bar#1,foo/bar#2` (comma continuation). The `/` and `#` exclusions are GitHub-ID specific; the Linear sibling's rule doesn't need them.
->
-> Boundary check works whether `CronList` reports the wrapped form `/loop 6m <command-name> <raw-arg>` or the inner `<command-name> <raw-arg>`.
+Used by both this phase's arm check and Phase 7's self-cancel — these two checks must stay in lockstep. Defined in [`../_shared/cron-match.md`](../_shared/cron-match.md); this skill is the **`ship-issue-gh`** consumer (`<boundary-class>` = alphanumeric, `-`, `,`, `/`, `#` — the `/` and `#` exclusions are GitHub-ID specific; `/loop` interval `6m`).
 
 ### Arm check
 
@@ -201,21 +193,7 @@ Row 0 is **first-match-wins** and precedes row 1: an issue closed-as-`not_planne
 
 **Stale-CI freshness guard (rows 3a/3b + three-strikes).** A `bucket=fail` check counts as failing only if its run targets the **current head SHA** of the PR (the `headRefOid` from `gh pr view --json headRefOid`, cross-referenced with the check-run's `head_sha`). A failure recorded against an older commit is **stale** — treat it as `pending`, not failing. This stops a fix-push from being scored against a not-yet-rerun check: the old failing run lingers until CI re-triggers on the new SHA, and counting it would mis-fire row 3a and burn a three-strikes attempt on a result that no longer reflects the branch.
 
-**Defining "the last skill commit"** (used in rows 3, 3a, 3b, 4): the most recent commit on the PR branch carrying the skill's commit marker. Check the `<!-- ship-issue:commit -->` HTML comment in the commit body first — this is the primary marker, written on every skill commit (see the **Skill-commit marker** rule below). Fall back to the legacy `Co-Authored-By: Claude` trailer for commits made before the HTML marker landed:
-
-```
-git -C <workdir> log <pr-branch> --grep="<!-- ship-issue:commit -->" -1 --format="%H %ai"
-# if empty, fall back to the legacy trailer:
-git -C <workdir> log <pr-branch> --grep="Co-Authored-By: Claude" -1 --format="%H %ai"
-```
-
-If neither marker exists on the branch, treat **all** open review comments as new.
-
-**Skill-commit marker — what to write on commits** (Phase 4 references this rule by name):
-
-- **Always** include a `<!-- ship-issue:commit -->` HTML comment line in the commit body. Anchors the Phase 3 lookup above and is scoped under the existing `<!-- ship-issue:* -->` namespace, so it doubles as a Skill-authored audit signal in `git log`.
-- **By default**, also include a `Co-Authored-By: Claude <noreply@anthropic.com>` trailer (exact string) for backward-compat with historical skill-commit detection.
-- **Skip the trailer** when any reachable `CLAUDE.md` forbids it. Detection: use the `Grep` tool (case-insensitive, `-i`) for the pattern `co-authored-by` across the workdir's `CLAUDE.md`, any ancestor `CLAUDE.md` walking up to `/`, and `~/.claude/CLAUDE.md` — any hit ⇒ skip the trailer (the HTML marker alone is sufficient). The heuristic is intentionally conservative — a false positive only omits a redundant trailer, while a false negative would violate a documented policy. One-shot detection: a single `Grep` call with `-i`, `pattern: "co-authored-by"`, scoped to the reachable `CLAUDE.md` paths; any match ⇒ skip the trailer.
+**The "last skill commit" definition + the Skill-commit marker conventions** (used by rows 3/3a/3b/4 and referenced by name from Phase 4's commit steps) are defined in [`../_shared/skill-commit-marker.md`](../_shared/skill-commit-marker.md). This skill is the **`ship-issue-gh`** consumer (`<pr-branch>` = the `<n>-<kebab-title>` branch derived in Phase 4).
 
 Never reset an issue that already has a `status:in-progress` or `status:in-review` label. Resume.
 
@@ -239,24 +217,7 @@ Never reset an issue that already has a `status:in-progress` or `status:in-revie
 
 #### UI-reachability check (referenced by `pending → implementing` step 4 and `implementing (resume)`)
 
-After implementing and running local checks, scan the diff for new files under conventional UI-surface paths:
-
-- `src/pages/**` (Next.js Pages Router, Astro, Nuxt)
-- `pages/**` at repo root (older Next.js, similar)
-- `src/routes/**` and `routes/**` (SvelteKit, SolidStart, Remix, TanStack Router)
-- `app/**` paired with a framework router (Next.js App Router, Remix v2)
-- `src/views/**` (Vue / older conventions)
-- Framework-specific equivalents — use the same heuristic: any path the framework's routing convention treats as a user-reachable route.
-
-**If at least one new UI-surface file was added**, take exactly one of the following actions before opening the PR:
-
-a. **Wire an entry-point.** Add a link in the existing nav, mark up an index/landing page to reference the new surface, or otherwise ensure a human navigating the existing UI can reach the new surface without knowing the URL out-of-band.
-
-b. **Inline a validation note.** If the surface is deliberately orphan (admin-only utility route, deep-link debug page, intentionally-unlinked) or the framework lacks a natural entry-point, post a `<!-- ship-issue:note:reachability -->` comment on the issue stating exactly how a human should reach the new surface during `## Validation` — e.g. *"feature is not reachable from existing UI; navigate to `/foo` directly to verify."*
-
-**Pure-backend changes** (only files outside the UI-surface conventions — `src/lib/`, `src/api/`, `src/server/`, `internal/`, library code, infra, migrations, docs) **skip this step entirely.** No entry-point needed; no validation note required.
-
-**Detection is heuristic** and may misfire — when ambiguous (a path that matches a UI-surface pattern but isn't actually user-reachable, e.g. a `pages/_app.tsx` framework shell, a non-route module under `app/`, or a route gated by feature-flag), err toward (b) — write the validation note rather than fake-wiring an entry-point. The cost of an unnecessary note is one extra comment; the cost of a missing note is a manual validation that quietly skips the new surface.
+Defined in [`../_shared/ui-reachability.md`](../_shared/ui-reachability.md). This skill is the **`ship-issue-gh`** consumer: option (b)'s `<tracker-comment>` is a `<!-- ship-issue:note:reachability -->` comment on the issue; the artifact opened after the check is the PR.
 
 ### `implementing` (resume)
 
@@ -330,37 +291,11 @@ Run immediately after Phase 3, before any Phase 4 handler — execution order ma
 
 ### Three-strikes CI counter
 
-Owned entirely by this phase. Same contract as the Linear sibling — Phase 3 and Phase 4 never read or write `<!-- ship-issue:failcount:... -->` comments; only Phase 3.5 does.
-
-**Sub-phase A: reset scan — runs first, unconditionally.**
-
-1. Comments are **append-only**, so for each `<key>` take only the **latest** `<!-- ship-issue:failcount:<key>=N -->` comment (the most recent by `created_at`) — never "any comment with N>0", which would re-fire the reset forever. Consider a key live only when its latest failcount comment has `N > 0`.
-2. For each such live `<key>` (e.g. `github:ci/test`): look at the current CI data from Phase 3. If a check with exactly that name now passes (`bucket=pass`), append a `<!-- ship-issue:failcount:<key>=0 -->` comment to record the reset.
-3. A key with no matching check is **not** reset — leave it. The counter only resets on an observed pass.
-
-**Sub-phase B: increment / hard-stop — conditional on this wake's state.**
-
-Fire **once per wake**, in this order:
-
-1. If Phase 3's derived state is not `fixing`, stop. If `fixing` but no CI check is in the failing bucket (`bucket=fail`) of the assertion type (after per-check reclassification, including the stale-CI freshness guard), also stop.
-2. Identify failing assertion check(s). For each:
-   - Key: `github:<check-name>` (no platform prefix variation needed — this skill is GitHub-only).
-   - Read the most recent `<!-- ship-issue:failcount:<key>=N -->` comment. If none, `N = 0`.
-3. If `N + 1 >= 3` for **any** failing assertion key → **override** Phase 3's state to `failed` with reason `ci-three-strikes:<key>`. Run the `failed` handler and halt.
-4. Otherwise, hand control to the `fixing` handler and let it run to completion. **After** the `fixing` handler reaches its step 6 (the success signal), append a single new `<!-- ship-issue:failcount:<key>=N+1 -->` comment per currently-failing assertion key. Never increment twice in one wake. If `fixing` escapes to `blocked-user`/`failed` before reaching step 6, do **not** write any increment.
+Defined in [`../_shared/three-strikes-counter.md`](../_shared/three-strikes-counter.md). This skill is the **`ship-issue-gh`** consumer: `<failing-bucket>` = `bucket=fail`; `<passing-bucket>` = `bucket=pass`; `<failcount-key>` = `github:<check-name>` (GitHub-only — no platform prefix variation).
 
 ### Rebase against base — attempt-and-gate
 
-When the branch is detected as behind `main`/`master` (typically after a parent or sibling PR merges into the base during a parallel epic run), attempt an automatic rebase before escalating. **Behind-base is detected from the `mergeStateStatus` signal gathered in Phase 3** — `mergeStateStatus=BEHIND` on the open PR is the trigger for this section.
-
-1. `git fetch origin && git rebase origin/<base>`.
-2. **Conflict markers present** → `git rebase --abort`. Transition to `blocked-user` with reason `rebase-needs-human`. The marker comment lists the conflicted file paths so the human can resolve locally and push.
-3. **Rebase clean (no markers)** → run the project's gates — the same local checks Phase 4's handlers run (`pnpm typecheck && pnpm test` or whatever the repo's `package.json` scripts / CLAUDE.md defines).
-4. **Gates pass** → `git push --force-with-lease`. Post `<!-- ship-issue:rebase:auto -->` as a **marker-only** comment — the marker is the entire comment body, no trailing prose. Matches the convention of the other `<!-- ship-issue:* -->` markers (e.g. `<!-- ship-issue:commit -->`): downstream skills (`/abc:review-sweep` health pre-pass and the CI-repair pre-pass) grep for the marker as a yes/no signal, and free-form prose breaks the match across revisions. The rebase SHA range is already captured in the commit log for forensic reading. If a human-readable timeline note is also wanted, post it as a *separate* PR comment that does NOT contain the marker so the two signals stay decoupled. Re-enter Phase 3 on the next wake.
-5. **Gates fail** → `git rebase --abort`. Transition to `blocked-user` with reason `rebase-clean-but-tests-failed`. The marker comment summarises the failing gate output (top ~20 lines is enough).
-6. The **self-cheating hard stop** below applies verbatim inside this flow. No `--no-verify`, no `.skip()`-ing tests, no `// @ts-expect-error` to silence a failure, no widening types — even when auto-resolving. If the only way to make gates pass is to delete or weaken an assertion, abort and escalate via step 5.
-
-The legacy `failed: rebase-conflict-needs-human` reason is **no longer emitted**. Mechanical rebase failures are recoverable by re-running `/abc:ship-issue-gh <same-arg>` after resolving the conflict locally and pushing — so they belong on the `blocked-user` axis, not `failed`. Note the cron does **not** stay armed across a `blocked-user` halt: Phase 7's CronDelete fires on **all** halts (blocked-user, failed, all-merged), so re-running the command is what re-arms the loop. `failed` is reserved for self-cheating and hard correctness walls (see below and the three-strikes counter above).
+Defined in [`../_shared/rebase-attempt-and-gate.md`](../_shared/rebase-attempt-and-gate.md). This skill is the **`ship-issue-gh`** consumer: `<behind-base-signal>` = `mergeStateStatus=BEHIND` on the open PR; `<command>` = `/abc:ship-issue-gh`. The **self-cheating hard stop** below applies verbatim inside that flow.
 
 ### Self-cheating hard stop (the most important rule in this skill)
 

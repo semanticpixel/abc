@@ -135,15 +135,7 @@ The user invokes `/ship-issue <arg>` once. The skill itself is responsible for a
 
 #### Cron-entry match rule
 
-Used by both the arm check (below) and the self-cancel in Stop conditions. **Define it once, reference it by name** — these two checks must stay in lockstep, and past edits have drifted when the rule was described inline twice.
-
-> A `CronList` entry **matches** this invocation when its command string contains `<command-name> <raw-arg>` **followed by a word boundary** — the next character (if any) must NOT be alphanumeric, `-`, or `,`. `<command-name>` is the literal slash-command name Claude Code injects for this invocation (e.g. `/ship-issue` when invoked top-level, or `/<plugin>:ship-issue` when invoked through a plugin namespace — verify from the `<command-name>` tag Claude Code passes at invocation time, including on `/loop`-triggered wakes where the inner command name is still surfaced).
->
-> Reading the **actually-injected** name — rather than hardcoding `/ship-issue` — is load-bearing for plugin-namespaced invocations: the hardcoded substring `/ship-issue` is **not** present in `/abc:ship-issue <raw-arg>` (the prefix is `/abc:`, not `/`), so the match always failed and every wake duplicate-armed a new cron.
->
-> **Fallback regex** when `<command-name>` isn't reachable (older Claude Code versions, edge cases): test the entry's command string against `(?:^|[^A-Za-z0-9])(?:[A-Za-z][A-Za-z0-9_-]*:)?ship-issue <raw-arg>(?![A-Za-z0-9_,-])`. The optional `<plugin>:` prefix capture covers any plugin-namespacing scheme; the trailing negative-lookahead is the same boundary class as the strict rule. This still prevents `PROJ-1` from false-matching `PROJ-10` (prefix) or `PROJ-1,PROJ-2` (comma continuation).
->
-> The boundary check works whether `CronList` reports the entry as the wrapped `/loop 6m <command-name> <raw-arg>` or the inner `<command-name> <raw-arg>`.
+Used by both the arm check (below) and the self-cancel in Stop conditions; the two must stay in lockstep. The rule is single-sourced in [`../_shared/cron-match.md`](../_shared/cron-match.md) — `ship-issue` is the consumer with `<boundary-class>` = alphanumeric, `-`, `,` and `/loop` interval `6m`. SKILL.md § Phase 0.5 references the same file; editing the convention there updates every consumer at once.
 
 #### Arm check
 
