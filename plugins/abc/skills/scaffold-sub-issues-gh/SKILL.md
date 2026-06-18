@@ -44,11 +44,15 @@ This is the GitHub-Issues sibling of `/abc:scaffold-sub-issues` (which targets L
 
 `$ARGUMENTS` has four shapes — detect in order, first match wins.
 
-**Path precedence (applies before shapes 2–3).** If the first token names an **existing file** (check with `ls`), or ends in `.md`, it is a plan path, not a repo/issue ref — skip to shape 4. This stops a relative plan path like `examples/PLAN-avatar-component.md` (which matches the `<owner>/<repo>` shape character-for-character) from being misparsed as an `owner/repo` arg. Shapes 2 and 3 below are also **full-token anchored** (`^…$`) so a token with a trailing `/path/...` segment can't partial-match.
+**Path precedence (applies before shapes 2–3).** The first token is a plan path — skip to shape 4 — if **either**:
+- it names an **existing file** (check with `ls`); this is the reliable discriminator and catches the common `examples/PLAN-avatar-component.md` case (which matches the `<owner>/<repo>` shape character-for-character) on its own; **or**
+- it ends in `.md` **and does not** fully match `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$` — e.g. a multi-segment path like `docs/plans/feature.md`. The "does not fully match owner/repo" guard is load-bearing: GitHub permits a repo named `owner/notes.md`, and that token *should* still parse as a hub repo (shape 3), not a plan path. A genuine single-segment plan path that happens to be `owner/repo`-shaped is covered by the `ls` existing-file check above (it has to exist on disk to be read anyway).
+
+Shapes 2 and 3 below are also **full-token anchored** (`^…$`) so a token with a trailing `/path/...` segment can't partial-match.
 
 1. **Empty** → auto-detect mode. Look for `PLAN-*.md` in cwd (newest by mtime wins), fall back to `~/.claude/plans/PLAN-*.md` (newest wins). If multiple candidates, ask the user to pick via `AskUserQuestion`. If none, abort with: "No PLAN-*.md found. Run /abc:plan first."
 2. **First token fully matches `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#\d+$`** (e.g. `semanticpixel/abc#42`) and is not an existing file → **existing-parent mode**. Treat the first token as the parent issue. Remaining tokens are plan file paths (all required, all must exist). This skill will add child issues to that parent's task-list instead of creating a new one.
-3. **First token fully matches `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`** (a bare `<owner>/<repo>`), is not an existing file, and does not end in `.md` → **new-parent mode with explicit hub repo**. Remaining tokens are plan file paths.
+3. **First token fully matches `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`** (a bare `<owner>/<repo>`) and is not an existing file → **new-parent mode with explicit hub repo**. Remaining tokens are plan file paths. (A repo legitimately named `owner/notes.md` lands here, not in the path branch — see the precedence note above.)
 4. **Otherwise** → all tokens are plan file paths (one or more). **New-parent mode with auto-detected hub repo** (from cwd's `git remote get-url origin` — must be a GitHub URL; if not, ask the user for an explicit `<owner>/<repo>`).
 
 Read all selected plan files in full. Concatenate them in the order provided (Phase 1.5 handles conflicts).
