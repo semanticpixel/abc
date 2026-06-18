@@ -135,9 +135,12 @@ def check_bash_scope(entry: str, where: str) -> None:
     spec = m.group(1)
     if not spec or spec != spec.strip():
         err(f"empty or padded Bash scope: {entry!r} in {where}")
-    elif ":" in spec and not spec.endswith(":*"):
+    elif ":" in spec and not re.fullmatch(r"[^:]+:\*", spec):
+        # A colon means this is a prefix grant: require exactly one `<cmd>:*`
+        # (non-empty command, single colon). Rejects `Bash(:*)` (empty prefix)
+        # and `Bash(a:b:*)` (multi-segment) — both over-broad vs the contract.
         err(
-            f"Bash prefix grant must end with ':*' (got {entry!r}) in {where} — "
+            f"Bash prefix grant must be a single `<cmd>:*` (got {entry!r}) in {where} — "
             "use `Bash(<cmd>:*)` for prefix grants or drop the colon for an "
             "exact/wildcard command"
         )
@@ -173,7 +176,7 @@ for md in skill_md:
             for t in tools:
                 if not isinstance(t, str):
                     err(f"`allowed-tools` entry in {rel(md)} is not a string: {t!r}")
-                elif t.startswith("Bash"):
+                elif t == "Bash" or t.startswith("Bash("):
                     check_bash_scope(t, rel(md))
 
 for md in agent_md:
@@ -199,6 +202,10 @@ for md in agent_md:
                 )
 
 # 4. hooks.json — real event names, resolvable command paths, executable scripts
+# Intentionally a CURATED typo-catching whitelist, NOT the full (~30-event)
+# documented Claude Code hook set. It covers every event abc's hooks.json uses
+# today; widen it when hooks.json adopts a new event, otherwise a valid-but-
+# omitted event would red-CI.
 VALID_HOOK_EVENTS = {
     "PreToolUse",
     "PostToolUse",
