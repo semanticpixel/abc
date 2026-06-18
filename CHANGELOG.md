@@ -15,6 +15,20 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-06-17
+
+### Changed
+
+- **`/abc:pr` robustness** (PATCH — ST-9 of the plugin review remediation, parent #47; SKILL prose only, no `allowed-tools` changes). Fixes the `pr` skill's internal contradictions and coverage gaps surfaced by the audit.
+  - **Strict step order.** Description drafting is now step 6 and the confirmation pause step 7 — previously the pause (step 6) referenced a description "drafted in step 7", a forward reference. The hard-rule cross-reference now points at step 7.
+  - **Failed-checks rule no longer self-contradicts.** Step 4 keeps its "stop, report, user may explicitly override" behavior; the hard rule is softened from a flat "do not push broken code" to "never push failing code without an explicit user override", matching step 4.
+  - **Secret detection beyond `.env`.** Step 3 now scans the full diff *and untracked files being added* for credential patterns (`ghp_`/`github_pat_`, `glpat-`, `AKIA`, `sk-`, `xox[bpars]-`, `-----BEGIN … PRIVATE KEY-----`, high-entropy `*_KEY`/`*_TOKEN`/`*_SECRET` assignments), retaining the 1Password-ref exemption.
+  - **Monorepo awareness.** Step 4 locates the nearest `package.json` at or above the changed files when a workspace manifest exists and runs that package's scripts (`pnpm --filter <pkg> …`), falling back to root.
+  - **Untracked files no longer invisible.** Step 1 parses `git status --porcelain` `??` entries so new files are included in grouping, the description, and staging.
+  - **Platform fallback + default-branch detection.** Step 1 `AskUserQuestion`s when neither GitHub nor GitLab host pattern matches, and reads the default branch from `git remote show origin` instead of assuming `main`/`master`/`develop`.
+  - **Stale base avoided.** Step 5 runs `git fetch origin` and branches from `origin/<default>` when branching off the default branch (justifying the retained `git fetch` grant from ST-1).
+  - **Naming.** Heading is now `# /abc:pr`; the step-9 pointer references `/abc:ship-issue` and `/abc:review-sweep`.
+
 ## [0.10.1] - 2026-06-17
 
 ### Changed
@@ -322,6 +336,7 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
 [Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.5...HEAD
+[0.10.2]: https://github.com/semanticpixel/abc/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/semanticpixel/abc/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/semanticpixel/abc/compare/v0.9.7...v0.10.0
 [0.9.7]: https://github.com/semanticpixel/abc/compare/v0.9.6...v0.9.7
