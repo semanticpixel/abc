@@ -100,7 +100,7 @@ Terminal A — implementer                Terminal B — reviewer
 
 **Reviewer post gate.** `review-epic[-gh]` keeps the repo's confirm-before-posting convention: a tick that produced a review asks once per tick (via `AskUserQuestion`) before posting anything. A pending review therefore blocks its tick until you answer — the reviewer session is walk-away *between* reviews, not *during* them. No-op ticks never ask. (Unattended posting was considered and deferred — see the Hard Rules in either `review-epic*` SKILL.md.)
 
-**Validation status.** The `review-epic` pair's behavior is **spec-mapped, not yet runtime-validated** end-to-end: the multi-repo routing and the GitLab MR positioned-discussion posting path have a documented contract but haven't been exercised against a live sandbox epic yet (`scripts/validate-plugin.py` checks manifest/frontmatter schema only, not behavior). The smoke checklist on the ST-4 PR tracks closing that gap.
+**Validation status.** `review-epic-gh`'s single-repo GitHub path is now **runtime-validated**: it drove the review half of the plugin-remediation epic (`semanticpixel/abc#47`), reviewing every child PR end-to-end against live epic context. Still **spec-mapped but not yet runtime-exercised**: multi-repo routing (both reviewers), the Linear `review-epic` path, and the GitLab MR positioned-discussion posting path (`scripts/validate-plugin.py` checks manifest/frontmatter schema only, not behavior).
 
 ---
 
