@@ -157,11 +157,11 @@ Optional environment variables:
 
 ## Design principles
 
-- **Linear is the source of truth.** Skills are stateless across sessions; they re-derive state from Linear comments, PR/MR status, and `CronList` on every wake.
+- **The tracker is the source of truth.** Skills are stateless across sessions; they re-derive state from the tracker (Linear comments / GitHub issue comments), PR/MR status, and `CronList` on every wake.
 - **Pause for confirmation before destructive or visible operations.** Opening PRs/MRs, creating Linear issues, posting reviewer comments — all gated.
 - **No AI attribution.** Commits, PR/MR descriptions, and Linear comments never include "Generated with Claude Code" footers or `Co-Authored-By: Claude` trailers.
 - **Tool scoping at the skill level.** Each skill declares the minimum tools it needs. `/abc:review` cannot push code; `/abc:plan` cannot create Linear issues; etc.
-- **Self-arming loops.** `/abc:ship-issue` and `/abc:ship-epic` arm their own `/loop` so you invoke once and walk away. They self-cancel on terminal states.
+- **Self-arming loops.** The `ship-issue`/`ship-epic` pairs (`-gh` siblings included) and the `review-epic`/`review-epic-gh` reviewers arm their own `/loop` so you invoke once and walk away. They self-cancel on terminal states.
 - **Compose with `/loop`.** One-shot skills like `/abc:review-sweep` can be wrapped: `/loop 30m /abc:review-sweep` keeps your queue swept while you work elsewhere.
 
 ---
@@ -178,8 +178,8 @@ Install only what's needed for the skills you'll actually use — every dependen
 
 | Skill | Required |
 |---|---|
-| `/abc:scaffold-sub-issues`, `/abc:ship-issue`, `/abc:ship-epic` | Linear MCP (`claude_ai_Linear`) connected and authed |
-| `/abc:scaffold-sub-issues-gh`, `/abc:ship-issue-gh`, `/abc:ship-epic-gh` | `gh` CLI (>= 2.40) authed for the target host. No Linear required. |
+| `/abc:scaffold-sub-issues`, `/abc:ship-issue`, `/abc:ship-epic`, `/abc:review-epic` | Linear MCP (`claude_ai_Linear`) connected and authed. `/abc:review-epic` also needs `gh` and/or `glab` to read the child PR/MR it routes to via the `repo:` label. |
+| `/abc:scaffold-sub-issues-gh`, `/abc:ship-issue-gh`, `/abc:ship-epic-gh`, `/abc:review-epic-gh` | `gh` CLI (>= 2.40) authed for the target host. No Linear required. |
 | `/abc:review`, `/abc:review-sweep` (GitLab paths only) | GitLab MCP (`mcp__gitlab__*`) |
 | `/abc:plan`, `/abc:pr`, `/abc:review` (GitHub paths) | None — local files + `gh` CLI |
 

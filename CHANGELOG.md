@@ -15,6 +15,18 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-06-18
+
+### Changed
+
+- **Validator coverage + repo hygiene** (PATCH — ST-11 of the plugin review remediation, parent #47; `scripts/validate-plugin.py` + metadata/doc fixes, no skill `allowed-tools` changes). Teaches `validate-plugin.py` to catch the defect classes the plugin review surfaced, and fixes the stale metadata those new checks flag.
+  - **Five new validator checks.** (1) `allowed-tools` must be a list of strings and every `Bash(…)` grant must use the documented scoping syntax — prefix grants end in `:*`, exact/wildcard commands carry no stray colon (a malformed scope fails CI). (2) The reviewer/triage agents' `tools` are validated against the read-only set `{Read, Grep, Glob}` — a `Write` (or any non-read-only) grant fails CI, enforcing their read-only-by-contract design. (3) hooks.json event names are checked against the real Claude Code lifecycle-event whitelist, every `${CLAUDE_PLUGIN_ROOT}/…` command path must resolve to a file on disk, and the executable-bit check now globs `hooks/*.sh` instead of hardcoding `stay-awake.sh`. (4) the current `plugin.json` version must have both a `## [x.y.z]` CHANGELOG section and a `[x.y.z]:` link definition, and every versioned section must have a link definition (no dangling compare links). (5) each skill's frontmatter `name` must match its directory name.
+  - **Variable-shadowing fix.** The frontmatter loop reused `parsed` (the manifest dict) as its YAML target; the loader is now a `load_frontmatter()` helper returning `(fm, error)` and the manifest dict is named `manifests`, so the two no longer collide.
+  - **CHANGELOG link refs repaired.** Added the missing `[0.7.6]`–`[0.9.1]` compare definitions (every versioned section now resolves), and repointed `[Unreleased]` at `v0.10.4...HEAD` (was stuck at `v0.7.5...HEAD`). This is exactly the class check (4) now enforces.
+  - **Manifest descriptions de-enumerated.** `plugin.json` and `marketplace.json` switched from a hand-maintained skill list (which had already drifted — it omitted `review-epic(+gh)`) to a non-enumerating "…plan → scaffold → ship → review lifecycle: 12 skills + 2 subagents" so it can't drift again.
+  - **README fixes.** "Linear is the source of truth" → "The tracker is the source of truth"; the self-arming-loops principle now names the `-gh` siblings and the `review-epic[-gh]` reviewers; the Requirements tracker table adds `/abc:review-epic` (Linear MCP + `gh`/`glab` for the child PR/MR) and `/abc:review-epic-gh` (`gh`) rows.
+  - AC: the new checks bite (demonstrated against deliberately-corrupted inputs and the pre-fix CHANGELOG link defs); validator green on the fixed tree; the `.github/workflows/validate.yml` workflow is unchanged.
+
 ## [0.10.3] - 2026-06-17
 
 ### Changed
@@ -351,7 +363,8 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `scripts/validate-plugin.py` + `.github/workflows/validate.yml` — manifest + skill/agent frontmatter validation on every push and PR. Catches JSON drift, version mismatch between `marketplace.json` and `plugin.json`, missing YAML frontmatter, hook executable bit loss. ([#2](https://github.com/semanticpixel/abc/pull/2))
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
-[Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.5...HEAD
+[Unreleased]: https://github.com/semanticpixel/abc/compare/v0.10.4...HEAD
+[0.10.4]: https://github.com/semanticpixel/abc/compare/v0.10.3...v0.10.4
 [0.10.3]: https://github.com/semanticpixel/abc/compare/v0.10.2...v0.10.3
 [0.10.2]: https://github.com/semanticpixel/abc/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/semanticpixel/abc/compare/v0.10.0...v0.10.1
@@ -362,6 +375,16 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 [0.9.4]: https://github.com/semanticpixel/abc/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/semanticpixel/abc/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/semanticpixel/abc/compare/v0.9.1...v0.9.2
+[0.9.1]: https://github.com/semanticpixel/abc/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/semanticpixel/abc/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/semanticpixel/abc/compare/v0.7.12...v0.8.0
+[0.7.12]: https://github.com/semanticpixel/abc/compare/v0.7.11...v0.7.12
+[0.7.11]: https://github.com/semanticpixel/abc/compare/v0.7.10...v0.7.11
+[0.7.10]: https://github.com/semanticpixel/abc/compare/v0.7.9...v0.7.10
+[0.7.9]: https://github.com/semanticpixel/abc/compare/v0.7.8...v0.7.9
+[0.7.8]: https://github.com/semanticpixel/abc/compare/v0.7.7...v0.7.8
+[0.7.7]: https://github.com/semanticpixel/abc/compare/v0.7.6...v0.7.7
+[0.7.6]: https://github.com/semanticpixel/abc/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/semanticpixel/abc/releases/tag/v0.7.5
 [0.7.4]: https://github.com/semanticpixel/abc/releases/tag/v0.7.4
 [0.7.3]: https://github.com/semanticpixel/abc/releases/tag/v0.7.3
