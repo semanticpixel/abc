@@ -1,6 +1,6 @@
 # GitHub-Issues conventions for the `-gh` skill family
 
-The `-gh` skills (`scaffold-sub-issues-gh`, `ship-issue-gh`, `ship-epic-gh`) emulate Linear's tracker semantics on top of GitHub Issues. This file documents the label scheme, task-list pattern, and marker comments they all rely on, so behavior stays aligned across the three skills.
+The `-gh` skills (`scaffold-sub-issues-gh`, `ship-issue-gh`, `ship-epic-gh`, `review-epic-gh`) emulate Linear's tracker semantics on top of GitHub Issues. This file documents the label scheme, task-list pattern, and marker comments they all rely on, so behavior stays aligned across the family.
 
 Copy this doc verbatim if you fork or add a new `-gh` skill.
 
@@ -37,7 +37,7 @@ Skills pass `--color` and a short `--description` on first creation; subsequent 
 
 ## Hierarchy emulation (task-list-in-body)
 
-GitHub has no native sub-issue API. We emulate parent → child by maintaining a task-list section in the parent's body:
+We emulate parent → child by maintaining a task-list section in the parent's body. (GitHub *does* have a native sub-issue API as of its 2025 GA, but we deliberately don't depend on it — the task-list-in-body approach keeps the `-gh` family working on GitHub Enterprise instances that haven't enabled it and on older `gh` CLIs, and keeps the hierarchy human-readable in the raw issue body. Portability over native integration.)
 
 ```markdown
 ## Sub-issues
@@ -53,7 +53,7 @@ GitHub has no native sub-issue API. We emulate parent → child by maintaining a
 - The fence markers (`<!-- ship-epic:sub-issues:start -->` / `<!-- ship-epic:sub-issues:end -->`) are sacred. Skills only edit content **between** them. Anything outside is user-authored and untouched.
 - GitHub autolinks `#42` and `<owner>/<repo>#42`, rendering inline title + state. The checkbox auto-toggles to `[x]` when the referenced issue closes — we don't manage that ourselves.
 - `ship-epic-gh` walks the list to discover children. Order is the order of the lines in the parent body. New children land at the bottom of the block (append-only) unless the user manually reorders.
-- If the fence markers are missing on next read, the skill re-injects them at the end of the parent body. Existing un-fenced task-lists are not migrated automatically — too easy to misparse.
+- If the fence markers are missing on next read, **`scaffold-sub-issues-gh` re-injects them** at the end of the parent body (it owns parent-body structure). The **coordinators** (`ship-epic-gh`, and `ship-issue-gh` when expanding a parent) do **not** silently re-inject — a parent missing its fence is a structural problem they halt on, so a scaffold/coordinator race or a hand-edited body never gets a second, conflicting block written underneath them. Existing un-fenced task-lists are not migrated automatically either way — too easy to misparse.
 
 ### Cross-repo references
 
@@ -80,15 +80,24 @@ Dependencies between children are expressed as labels on the **child** issues:
 
 `ship-issue-gh` writes durable state via HTML comments inside issue comments. Same pattern as the Linear sibling — they're invisible in the GitHub UI but easy to grep via `gh api .../issues/<n>/comments`.
 
+Every marker below is grep-confirmed against the handler that writes it (see `ship-issue-gh/SKILL.md` / `ship-issue/SKILL.md`). If you add or rename a marker in a skill, update this row in the same change.
+
 | Marker | Meaning |
 |---|---|
 | `<!-- ship-issue:event:started -->` | Worker began this issue |
-| `<!-- ship-issue:event:pr-open -->` | PR/MR opened, transitioned to in-review |
 | `<!-- ship-issue:event:merged -->` | PR/MR merged, issue ready to close (or transitioning to blocked-verify) |
-| `<!-- ship-issue:event:blocked-user -->` | Halted; needs human |
+| `<!-- ship-issue:event:blocked -->` | Halted; needs human (`blocked-user` state) |
 | `<!-- ship-issue:event:failed -->` | Hard stop; issue closed `not_planned` |
-| `<!-- ship-issue:check-fail:<check-name>=<count> -->` | CI failure counter for three-strikes detection |
-| `<!-- ship-issue:verify:passed -->` | Manual `## Validation` confirmed by the user |
+| `<!-- ship-issue:commit -->` | In the **commit body** of every skill-authored commit (audit signal + "last skill commit" anchor for review-freshness) |
+| `<!-- ship-issue:failcount:<key>=N -->` | CI failure counter for three-strikes detection; `<key>` is `github:<check-name>`, `N` the count. Append-only; latest wins |
+| `<!-- ship-issue:rebase:auto -->` | Marker-only comment: the branch was auto-rebased onto base and force-pushed after gates passed |
+| `<!-- ship-issue:note:reachability -->` | A new UI surface is deliberately orphan; states how a human reaches it during `## Validation` |
+| `<!-- ship-issue:note:merge-nudge -->` | Posted when an open PR is green but unmerged, nudging a human to merge (the skill never self-merges) |
+| `<!-- ship-issue:verify:passed -->` | Manual `## Validation` confirmed by the user (clears the `blocked-verify` gate); part of the `verify:` sub-namespace |
+
+> No `event:pr-open` marker exists — the `pr-open` state is derived from an open linked PR, not written as a comment. (An earlier version of this table listed it; nothing ever wrote it.) Likewise `event:blocked` is the real marker, not `event:blocked-user`, and the counter is `failcount:<key>=N`, not `check-fail:<name>=<count>`.
+
+The `review-epic:reviewed-at:<sha>` marker (written by `review-epic` / `review-epic-gh` on child PRs) lives in the review-epic family — see `../review-epic-gh/github-conventions.md`.
 
 Comments are append-only — never edit existing comments to mutate state. The latest matching marker wins on re-derivation.
 

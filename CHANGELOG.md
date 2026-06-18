@@ -15,6 +15,22 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-06-17
+
+### Changed
+
+- **plan → scaffold pipeline contract + conventions-file truth** (PATCH — ST-10 of the plugin review remediation, parent #47; SKILL/doc prose only, no `allowed-tools` changes). Closes the validation-gate format gap end-to-end, single-sources the plan grammar, fixes scaffold arg-parsing traps, and makes `github-conventions.md` match what the skills actually write.
+  - **Validation gate now attachable in strict format.** `plan/SKILL.md`'s sub-task skeleton gains an optional `- **validation:** <steps>` bullet; both scaffolds read it as the per-child gate carrier (a top-level `## Validation` stays for parent-level notes, resolved by Phase 4 prompt). `examples/PLAN-avatar-component.md` now carries the gate on ST-3 via that bullet.
+  - **`(none)`/`(empty)`/omitted relations sentinel** is now defined (was an undefined `(empty)` in the skeleton vs unspecified parser behavior). The skeleton emits `(none)`; both parsers accept `(none)`/`(empty)`/omitted as "no relations". Example file updated.
+  - **Plan grammar single-sourced.** The strict/loose formats, sub-task fields, relations sentinel, and gate-resolution order are extracted to new `plugins/abc/skills/plan/plan-format.md`; both scaffold skills parse per that doc and keep only tracker-specific deltas inline (was duplicated and already micro-drifted between the two Phase 1 sections).
+  - **`plan` is no longer Linear-only.** Purpose, skeleton blockquote, and next-steps mention both scaffold/ship siblings; added the GitHub cross-owner `repo:<owner>/<name>` guidance.
+  - **scaffold-sub-issues-gh arg shape no longer swallows plan paths.** A first token that names an existing file or ends in `.md` is treated as a plan path before the `<owner>/<repo>` shapes; shapes 2–3 are full-token anchored (`^…$`). `scaffold-sub-issues examples/PLAN-avatar-component.md` now parses as a path, not an `owner/repo`.
+  - **Linear parent-ID regex anchored.** `^[A-Z]+-\d+$` full-token match + file-existence precedence, mirroring the gh fix.
+  - **Hub-repo label union documented.** `scaffold-sub-issues-gh` Phase 2.3 + Phase 4 preview now state the hub repo needs the union of *all* `repo:*` labels (the parent issue carries them), while each target repo gets only its own `repo:<name>`.
+  - **MCP sort-direction assumption removed.** `scaffold-sub-issues` Phase 6 sorts returned issues by `createdAt` explicitly instead of assuming a descending response order.
+  - **Sequential-creation rationale corrected** (`scaffold-sub-issues-gh`) to the real risks: mis-mapping returned issue numbers to ST-N, and secondary rate limits.
+  - **`github-conventions.md` marker table now grep-true.** `event:blocked-user` → `event:blocked`; `check-fail:<name>=<count>` → `failcount:<key>=N`; dropped the phantom `event:pr-open` (no skill writes it); added `commit`, `rebase:auto`, `note:reachability`, `note:merge-nudge`, and the `verify:` namespace; added a `review-epic:reviewed-at:<sha>` pointer noting both review-epic variants write it; added `review-epic-gh` to the family list; reworded the review-epic-gh stub's "owns" to "shares with review-epic". Scoped the fence re-inject to `scaffold-sub-issues-gh` (coordinators halt). Reworded the stale "no native sub-issue API" claim to a deliberate portability choice (sub-issues went GA in 2025).
+
 ## [0.10.2] - 2026-06-17
 
 ### Changed
@@ -336,6 +352,7 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
 [Unreleased]: https://github.com/semanticpixel/abc/compare/v0.7.5...HEAD
+[0.10.3]: https://github.com/semanticpixel/abc/compare/v0.10.2...v0.10.3
 [0.10.2]: https://github.com/semanticpixel/abc/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/semanticpixel/abc/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/semanticpixel/abc/compare/v0.9.7...v0.10.0
