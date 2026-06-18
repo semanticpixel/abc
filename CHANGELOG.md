@@ -15,6 +15,16 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.10.5] - 2026-06-18
+
+### Changed
+
+- **`ship-issue` + `ship-issue-gh` Phase 3 reads all three PR comment surfaces** (PATCH — ST-12 of the plugin review remediation, parent #47; SKILL prose only, no `allowed-tools` changes). Closes the under-coverage where the worker gathered reviewer feedback from inline review comments only and missed two surfaces, so a `/abc:review-epic[-gh]` review (which posts via the reviews API) could sit unseen while the worker derived `pr-open` instead of `fixing`. Observed live on `#63`. Both siblings fixed section-by-section; the difference is tracker-specific lines only.
+  - **GitHub (both siblings): union all three surfaces** when gathering "review comments since the last skill commit" — inline (`/pulls/<n>/comments`), **review bodies** (`/pulls/<n>/reviews` — a `CHANGES_REQUESTED`/`COMMENTED` review with a non-empty `body` is actionable; `APPROVED`/empty is not), and **top-level PR comments** (`/issues/<n>/comments`). The existing filters apply to the union: author ∉ {skill, PR author} and timestamp strictly after the `<!-- ship-issue:commit -->` marker; the skill's own `<!-- ship-issue:* -->` / the reviewer's `<!-- review-epic:* -->` marker-only comments and skill-authored inline replies are excluded. This filtered union is what rows 3/3a/4 mean by "review comments."
+  - **GitLab (`ship-issue`):** the MR gather now unions diff discussions **and** MR-level notes via `glab mr view <id> --comments` (under the existing `Bash(glab mr:*)` grant — no new MCP grant), skipping GitLab system notes.
+  - **Cancel scan + @-mention scan now run over every reviewer-reachable surface** (the ticket's own comments plus all PR/MR surfaces), not just inline — a reviewer may `cancel` or @-mention anywhere.
+  - **`Fixed in <sha>` replies are surface-matched:** inline threads get an in-thread reply; review-body and top-level items get one top-level `gh pr comment` (GitLab: a `glab mr note`) naming what they address. The skill's own marker comments are never replied to.
+
 ## [0.10.4] - 2026-06-18
 
 ### Changed
@@ -363,7 +373,8 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `scripts/validate-plugin.py` + `.github/workflows/validate.yml` — manifest + skill/agent frontmatter validation on every push and PR. Catches JSON drift, version mismatch between `marketplace.json` and `plugin.json`, missing YAML frontmatter, hook executable bit loss. ([#2](https://github.com/semanticpixel/abc/pull/2))
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
-[Unreleased]: https://github.com/semanticpixel/abc/compare/v0.10.4...HEAD
+[Unreleased]: https://github.com/semanticpixel/abc/compare/v0.10.5...HEAD
+[0.10.5]: https://github.com/semanticpixel/abc/compare/v0.10.4...v0.10.5
 [0.10.4]: https://github.com/semanticpixel/abc/compare/v0.10.3...v0.10.4
 [0.10.3]: https://github.com/semanticpixel/abc/compare/v0.10.2...v0.10.3
 [0.10.2]: https://github.com/semanticpixel/abc/compare/v0.10.1...v0.10.2
