@@ -1,6 +1,6 @@
 {
   "name": "abc",
-  "version": "0.10.5",
+  "version": "0.10.6",
   "description": "Always Be Cooking — personal workflow toolkit automating the plan → scaffold → ship → review lifecycle: 12 skills + 2 subagents.",
   "author": {
     "name": "Luis Torres"

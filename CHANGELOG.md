@@ -15,6 +15,12 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.10.6] - 2026-06-18
+
+### Changed
+
+- **README: refresh the `review-epic` validation-status note** (PATCH — doc only, no skill/`allowed-tools` changes). The note previously said the whole `review-epic` pair was "spec-mapped, not yet runtime-validated." `review-epic-gh`'s single-repo GitHub path has since been exercised end-to-end — it drove the review half of the plugin-remediation epic (parent #47), reviewing every child PR — so the note now credits that and narrows the remaining "spec-mapped but not yet runtime-exercised" gap to what genuinely hasn't run: multi-repo routing (both reviewers), the Linear `review-epic` path, and the GitLab MR positioned-discussion posting path. Dropped the stale pointer to the (now-merged) ST-4 PR smoke checklist.
+
 ## [0.10.5] - 2026-06-18
 
 ### Changed
@@ -373,7 +379,8 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `scripts/validate-plugin.py` + `.github/workflows/validate.yml` — manifest + skill/agent frontmatter validation on every push and PR. Catches JSON drift, version mismatch between `marketplace.json` and `plugin.json`, missing YAML frontmatter, hook executable bit loss. ([#2](https://github.com/semanticpixel/abc/pull/2))
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
-[Unreleased]: https://github.com/semanticpixel/abc/compare/v0.10.5...HEAD
+[Unreleased]: https://github.com/semanticpixel/abc/compare/v0.10.6...HEAD
+[0.10.6]: https://github.com/semanticpixel/abc/compare/v0.10.5...v0.10.6
 [0.10.5]: https://github.com/semanticpixel/abc/compare/v0.10.4...v0.10.5
 [0.10.4]: https://github.com/semanticpixel/abc/compare/v0.10.3...v0.10.4
 [0.10.3]: https://github.com/semanticpixel/abc/compare/v0.10.2...v0.10.3
