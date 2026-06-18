@@ -94,6 +94,7 @@ Every marker below is grep-confirmed against the handler that writes it (see `sh
 | `<!-- ship-issue:note:reachability -->` | A new UI surface is deliberately orphan; states how a human reaches it during `## Validation` |
 | `<!-- ship-issue:note:merge-nudge -->` | Posted when an open PR is green but unmerged, nudging a human to merge (the skill never self-merges) |
 | `<!-- ship-issue:verify:passed -->` | Manual `## Validation` confirmed by the user (clears the `blocked-verify` gate); part of the `verify:` sub-namespace |
+| `<!-- ship-issue:reply:fixed -->` | Leads a worker's **non-inline** `Fixed in <sha>` reply (top-level PR comment / GitLab MR note) so the worker can self-exclude it from the review-comment gather by marker rather than by login (worker and reviewer share one CLI login in the two-session pattern) |
 
 > No `event:pr-open` marker exists — the `pr-open` state is derived from an open linked PR, not written as a comment. (An earlier version of this table listed it; nothing ever wrote it.) Likewise `event:blocked` is the real marker, not `event:blocked-user`, and the counter is `failcount:<key>=N`, not `check-fail:<name>=<count>`.
 
