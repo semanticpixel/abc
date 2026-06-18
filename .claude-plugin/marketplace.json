@@ -11,7 +11,7 @@
     {
       "name": "abc",
       "description": "Personal workflow toolkit automating the plan → scaffold → ship → review lifecycle: 12 skills + 2 subagents.",
-      "version": "0.10.4",
+      "version": "0.10.5",
       "author": {
         "name": "Luis Torres"
       },
