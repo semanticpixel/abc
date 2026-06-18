@@ -1,6 +1,6 @@
 {
   "name": "abc",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "description": "Always Be Cooking — personal workflow toolkit: plan, scaffold-sub-issues(+gh), ship-issue(+gh), ship-epic(+gh), pr, review, review-sweep + reviewer/triage subagents.",
   "author": {
     "name": "Luis Torres"

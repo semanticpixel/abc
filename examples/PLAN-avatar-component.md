@@ -14,9 +14,10 @@ Add a typed `<Avatar />` primitive to the `design-system` package: accepts a use
 
 ## Sub-tasks
 
-> Each sub-task becomes a Linear sub-issue via `/abc:scaffold-sub-issues`.
-> `repo:` matches the Linear `repo:<name>` label convention.
-> `blocks` / `blocked by` create the dependency graph for `/abc:ship-epic`.
+> Each sub-task becomes a sub-issue via `/abc:scaffold-sub-issues` (Linear) or `/abc:scaffold-sub-issues-gh` (GitHub).
+> `repo:` matches the `repo:<name>` label convention.
+> `blocks` / `blocked by` create the dependency graph for `/abc:ship-epic[-gh]`.
+> ST-3 carries a `validation:` bullet — its merge gates on the manual check below.
 
 ### ST-1: Add Avatar primitive to design-system
 
@@ -29,7 +30,7 @@ Add a typed `<Avatar />` primitive to the `design-system` package: accepts a use
   - `AvatarProps` exported from the package barrel
   - Storybook story covers both image and initials variants across all three sizes
 - **blocks:** ST-3
-- **blocked by:** (empty)
+- **blocked by:** (none)
 
 ### ST-2: Bump design-system in web-app
 
@@ -51,7 +52,8 @@ Add a typed `<Avatar />` primitive to the `design-system` package: accepts a use
   - Existing header accessibility tests still pass (focus order, screen-reader labels)
   - Header snapshot test updated
   - Storybook story shows both image and initials states
-- **blocks:** (empty)
+- **validation:** Pull the merged branch, run `pnpm dev`, and log in as (a) a user with `imageUrl` set and (b) one without — confirm the image and initials variants both render and the header focus order is unchanged. (Attaches the post-merge `blocked-verify` gate to this child.)
+- **blocks:** (none)
 - **blocked by:** ST-1, ST-2
 
 ## Open questions

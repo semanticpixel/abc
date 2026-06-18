@@ -40,39 +40,19 @@ The output of this skill is a **parent issue ID** you can paste straight into `/
 `$ARGUMENTS` has three shapes — detect in order, first match wins:
 
 1. **Empty** → auto-detect mode. Look for `PLAN-*.md` in cwd (newest by mtime wins), fall back to `~/.claude/plans/PLAN-*.md` (newest wins). If multiple candidates, ask the user to pick via `AskUserQuestion`. If none, abort with: "No PLAN-*.md found. Run /abc:plan first."
-2. **First token matches `[A-Z]+-\d+`** (e.g. `PROJ-45`) → **existing-parent mode**. Treat the first token as the parent Linear issue ID. Remaining tokens are plan file paths (all required, all must exist). This skill will add sub-issues to that parent instead of creating a new one.
+2. **First token fully matches `^[A-Z]+-\d+$`** (e.g. `PROJ-45`) **and is not an existing file** → **existing-parent mode**. Treat the first token as the parent Linear issue ID. Remaining tokens are plan file paths (all required, all must exist). This skill will add sub-issues to that parent instead of creating a new one. (The full-token anchor + file-existence precedence stop a path that happens to start with capital letters from being misread as a Linear ID — if the token names a file on disk, it's a plan path, shape 3.)
 3. **Otherwise** → all tokens are plan file paths (one or more). Resolve relative to cwd or as absolute paths. This is **new-parent mode** with explicit input.
 
 Read all selected plan files in full. Concatenate them in the order provided (Phase 1.5 handles conflicts).
 
 ### Phase 1: Parse the plan structure
 
-Extract per plan. Two supported formats — prefer strict, accept loose:
+Parse each plan per the canonical grammar in [`../plan/plan-format.md`](../plan/plan-format.md) — the strict/loose formats, the sub-task block fields, the `(none)`/`(empty)`/omitted relations sentinel, and the validation-gate resolution order are all defined there (single-sourced so this skill and `scaffold-sub-issues-gh` can't drift). If neither format matches, halt with the message that doc specifies.
 
-**Strict format** (`/abc:plan` output) — preferred:
+**Linear-specific deltas** (everything else follows `plan-format.md` verbatim):
 
-- **Title** (the H1 minus `PLAN:`).
-- **Context** section text.
-- **Approach** section text.
-- **Sub-tasks** — for each `### ST-N: <title>` block, parse:
-  - `repo:` (required — error if missing)
-  - `scope:` (required)
-  - `acceptance criteria:` (list of bullets, required)
-  - `blocks:` (list of ST-IDs, optional)
-  - `blocked by:` (list of ST-IDs, optional)
-- **Validation** section text (parent-level).
-- **Out of scope** section text.
-
-**Loose format** — fallback for plans that weren't produced by `/abc:plan` (e.g. `~/.claude/plans/*.md` drafts or hand-written `PLAN-*.md`):
-
-- Sub-task headings like `## Sub-issue N — <repo>: <title>`. Required: `repo:` (in heading or first-line tag). Optional: scoped sub-sections beneath (`### Description`, `### Changes`, `### Acceptance criteria`, `### Tests`, `### Local checks`, `### Files to touch`, `## Validation`).
-- If acceptance criteria are missing from a sub-task, ask the user before proceeding — better to fix the source than to fabricate. Don't auto-fill.
-
-**Validation gate detection.** Look for `## Validation` headings:
-- Inside a sub-task's body → that sub-task carries the manual-validation gate (post-merge `blocked-verify` halt for `/abc:ship-issue`).
-- At the top level of the plan → unattached; in Phase 4 ask which sub-issue should inherit it.
-
-If **neither format** is detected → halt with "I couldn't parse sub-tasks from this plan. Expected `### ST-N:` blocks or `## Sub-issue N — <repo>:` headings."
+- The per-sub-task `validation:` bullet (or a sub-task-level `## Validation`) becomes that child's manual-validation gate — the post-merge `blocked-verify` halt for `/abc:ship-issue`. A top-level `## Validation` section is unattached; Phase 4 asks which sub-issue inherits it.
+- `repo:<name>` maps to a Linear `repo:<name>` label (Linear has a single workspace, so the cross-owner `repo:<owner>/<name>` form has no meaning here — treat the whole token as the label name).
 
 ### Phase 1.5: Reconcile multiple plans (only if 2+ plans given)
 
@@ -214,7 +194,7 @@ If "Edit before creating" — wait for user input, re-render the preview, re-ask
 
 ### Phase 6: Self-check
 
-1. `mcp__claude_ai_Linear__list_issues parentId=<parent-id> orderBy=createdAt limit=50`. Returns sub-issues in descending order — reverse to get ascending.
+1. `mcp__claude_ai_Linear__list_issues parentId=<parent-id> orderBy=createdAt limit=50`. **Don't assume a sort direction** — the MCP's `orderBy` direction isn't contractually guaranteed. Sort the returned issues by their `createdAt` field explicitly (ascending) client-side before comparing, rather than relying on the response order or reversing it blindly.
 2. Verify count matches (expected = plan sub-tasks created in this run; in append mode, expected = original count + new count).
 3. Verify IDs match the ST-N → ID map from Phase 5.
 4. Verify `createdAt` timestamps are strictly increasing among newly created sub-issues. If any two share the same second → log a warning (consumer might still walk in unspecified order); the user can manually reorder by editing in Linear or by re-running with a comma-separated list to `/abc:ship-issue`.

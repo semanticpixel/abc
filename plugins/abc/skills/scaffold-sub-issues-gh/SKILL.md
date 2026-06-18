@@ -33,7 +33,7 @@ This is the GitHub-Issues sibling of `/abc:scaffold-sub-issues` (which targets L
 - **Never create issues without an explicit confirmation gate.** Issue creation is write-heavy and visible to collaborators; the user must see the full proposed structure before any `gh issue create` call.
 - **Never create new labels silently.** If a sub-task references `repo:<name>` that doesn't exist, surface it and ask whether to create the label or rename the sub-task. Same for `status:*` if those don't exist yet.
 - **Never invent sub-tasks not present in the plan.** Parse what's there. If the plan is missing acceptance criteria or a `repo:`, ask the user — don't fabricate.
-- **Sub-issues must be created sequentially, not in parallel.** GitHub issue numbers are monotonically increasing per repo; we rely on creation order for the task-list ordering in the parent body. Parallel `gh issue create` calls can interleave and scramble the order across repos.
+- **Sub-issues must be created sequentially, not in parallel.** Two concrete risks, not just ordering: (1) **mis-mapping returned issue numbers** — each `gh issue create` prints the new number on its own; firing several concurrently makes it easy to bind the wrong number to the wrong ST-N in the ST→`#<n>` map, corrupting the task-list refs and the dependency labels. (2) **secondary rate limits** — GitHub throttles rapid bursts of content-creating calls with a 403 secondary-rate error. Sequential creation keeps the number↔ST binding unambiguous and the request pace under the threshold.
 - **When multiple plan files are provided, reconcile conflicts before building the tree.** Never silently pick one plan's version over another — surface contradictions via `AskUserQuestion`.
 - The parent issue's description is the **full plan markdown** (concatenated if multiple) plus the managed `## Sub-issues` task-list section, not a summary. Reviewers should be able to read the parent and understand the full context.
 - **Only touch labels in the declared namespaces** — `repo:*`, `status:*`, `blocks:*`, `blocked-by:*`. Never auto-add or remove user-authored labels outside these prefixes.
@@ -42,11 +42,17 @@ This is the GitHub-Issues sibling of `/abc:scaffold-sub-issues` (which targets L
 
 ### Phase 0: Parse arguments + locate plans + detect host
 
-`$ARGUMENTS` has four shapes — detect in order, first match wins:
+`$ARGUMENTS` has four shapes — detect in order, first match wins.
+
+**Path precedence (applies before shapes 2–3).** The first token is a plan path — skip to shape 4 — if **either**:
+- it names an **existing file** (check with `ls`); this is the reliable discriminator and catches the common `examples/PLAN-avatar-component.md` case (which matches the `<owner>/<repo>` shape character-for-character) on its own; **or**
+- it ends in `.md` **and does not** fully match `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$` — e.g. a multi-segment path like `docs/plans/feature.md`. The "does not fully match owner/repo" guard is load-bearing: GitHub permits a repo named `owner/notes.md`, and that token *should* still parse as a hub repo (shape 3), not a plan path. A genuine single-segment plan path that happens to be `owner/repo`-shaped is covered by the `ls` existing-file check above (it has to exist on disk to be read anyway).
+
+Shapes 2 and 3 below are also **full-token anchored** (`^…$`) so a token with a trailing `/path/...` segment can't partial-match.
 
 1. **Empty** → auto-detect mode. Look for `PLAN-*.md` in cwd (newest by mtime wins), fall back to `~/.claude/plans/PLAN-*.md` (newest wins). If multiple candidates, ask the user to pick via `AskUserQuestion`. If none, abort with: "No PLAN-*.md found. Run /abc:plan first."
-2. **First token matches `[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#\d+`** (e.g. `semanticpixel/abc#42`) → **existing-parent mode**. Treat the first token as the parent issue. Remaining tokens are plan file paths (all required, all must exist). This skill will add child issues to that parent's task-list instead of creating a new one.
-3. **First token matches `[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+`** (a bare `<owner>/<repo>`) → **new-parent mode with explicit hub repo**. Remaining tokens are plan file paths.
+2. **First token fully matches `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#\d+$`** (e.g. `semanticpixel/abc#42`) and is not an existing file → **existing-parent mode**. Treat the first token as the parent issue. Remaining tokens are plan file paths (all required, all must exist). This skill will add child issues to that parent's task-list instead of creating a new one.
+3. **First token fully matches `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`** (a bare `<owner>/<repo>`) and is not an existing file → **new-parent mode with explicit hub repo**. Remaining tokens are plan file paths. (A repo legitimately named `owner/notes.md` lands here, not in the path branch — see the precedence note above.)
 4. **Otherwise** → all tokens are plan file paths (one or more). **New-parent mode with auto-detected hub repo** (from cwd's `git remote get-url origin` — must be a GitHub URL; if not, ask the user for an explicit `<owner>/<repo>`).
 
 Read all selected plan files in full. Concatenate them in the order provided (Phase 1.5 handles conflicts).
@@ -57,32 +63,12 @@ Read all selected plan files in full. Concatenate them in the order provided (Ph
 
 ### Phase 1: Parse the plan structure
 
-Extract per plan. Two supported formats — prefer strict, accept loose:
+Parse each plan per the canonical grammar in [`../plan/plan-format.md`](../plan/plan-format.md) — the strict/loose formats, the sub-task block fields, the `(none)`/`(empty)`/omitted relations sentinel, and the validation-gate resolution order are all defined there (single-sourced so this skill and the Linear `scaffold-sub-issues` can't drift). If neither format matches, halt with the message that doc specifies.
 
-**Strict format** (`/abc:plan` output) — preferred:
+**GitHub-specific deltas** (everything else follows `plan-format.md` verbatim):
 
-- **Title** (the H1 minus `PLAN:`).
-- **Context** section text.
-- **Approach** section text.
-- **Sub-tasks** — for each `### ST-N: <title>` block, parse:
-  - `repo:` (required — error if missing)
-  - `scope:` (required)
-  - `acceptance criteria:` (list of bullets, required)
-  - `blocks:` (list of ST-IDs, optional)
-  - `blocked by:` (list of ST-IDs, optional)
-- **Validation** section text (parent-level).
-- **Out of scope** section text.
-
-**Loose format** — fallback for plans that weren't produced by `/abc:plan`:
-
-- Sub-task headings like `## Sub-issue N — <repo>: <title>`. Required: `repo:` (in heading or first-line tag). Optional: scoped sub-sections beneath (`### Description`, `### Changes`, `### Acceptance criteria`, `### Tests`, `### Local checks`, `### Files to touch`, `## Validation`).
-- If acceptance criteria are missing from a sub-task, ask the user before proceeding — better to fix the source than to fabricate. Don't auto-fill.
-
-**Validation gate detection.** Look for `## Validation` headings:
-- Inside a sub-task's body → that sub-task carries the manual-validation gate (post-merge `blocked-verify` halt for `/abc:ship-issue-gh`).
-- At the top level of the plan → unattached; in Phase 4 ask which sub-issue should inherit it.
-
-If **neither format** is detected → halt with "I couldn't parse sub-tasks from this plan. Expected `### ST-N:` blocks or `## Sub-issue N — <repo>:` headings."
+- The per-sub-task `validation:` bullet (or a sub-task-level `## Validation`) becomes that child's manual-validation gate — the post-merge `blocked-verify` halt for `/abc:ship-issue-gh`. A top-level `## Validation` section is unattached; Phase 4 asks which sub-issue inherits it.
+- `repo:<name>` maps to a GitHub `repo:<name>` label and routes to a same-owner repo by default. A fully-qualified `repo:<owner>/<name>` routes the child to a different owner's repo (the cross-owner case in Phase 2.2) — preserve the `<owner>/` prefix through to label creation and `gh issue create --repo`.
 
 ### Phase 1.5: Reconcile multiple plans (only if 2+ plans given)
 
@@ -104,8 +90,8 @@ In all modes:
    - Auto-detect → hub = `git remote get-url origin`, parsed to `<owner>/<repo>`.
 2. **Repo existence + auth.** `gh repo view <owner>/<repo>` for the hub and for every unique `repo:<name>` in the plan that names a *different* repo (cross-repo case). Resolve `<name>` to `<owner>/<name>` if the same owner as the hub, else require the plan to use `<owner>/<name>` explicitly. Halt with a clear message if any repo doesn't exist or isn't accessible.
 3. **Existing labels.** `gh label list --repo <owner>/<repo> --json name,color --limit 200` for the hub repo *and* for every distinct target repo. Compute the **missing labels** set:
-   - `repo:<name>` for each unique repo referenced.
-   - `status:in-progress`, `status:in-review` (the only two `status:*` labels we manage; `pending` is absence-of-label, `merged`/`failed` map to closed-state).
+   - **Hub repo** needs the **union of all `repo:*` labels** referenced by any sub-task — because the parent issue (created in the hub) carries that whole union as its labels (Phase 3's `labels: [<deduped union of all sub-task repo: labels>]`). So even a `repo:analytics-tools` whose children live in a *different* target repo must exist as a label in the hub repo, or applying the parent's label set fails.
+   - **Each target repo** needs its own `repo:<name>` label (the one its children carry), plus `status:in-progress`, `status:in-review` (the only two `status:*` labels we manage; `pending` is absence-of-label, `merged`/`failed` map to closed-state).
    - `blocks:#<N>` and `blocked-by:#<N>` are created **per-edge in Phase 5**, not here — their names depend on resolved issue numbers we don't know yet.
 4. **Existing-parent mode only.** `gh issue view <n> --repo <owner>/<repo> --json number,title,state,body,labels`. Capture body; parse any existing `<!-- ship-epic:sub-issues:start -->` ... `<!-- ship-epic:sub-issues:end -->` block for the collision check in Phase 3.
 
@@ -198,9 +184,10 @@ Dependency graph:
   ST-1 → ST-3
 
 Missing labels to create:
-  in <owner>/web-frontend:       status:in-progress, status:in-review, repo:web-frontend
-  in <owner>/analytics-tools:    status:in-progress, status:in-review, repo:analytics-tools
+  in <owner>/web-frontend (hub):  status:in-progress, status:in-review, repo:web-frontend, repo:analytics-tools
+  in <owner>/analytics-tools:     status:in-progress, status:in-review, repo:analytics-tools
 cwd advisory: <cwd>/analytics-tools/ not found  (you'll need to invoke /abc:ship-issue-gh from a cwd containing this subdir)
+# Note: the hub repo gets the *union* of all repo:* labels (the parent issue carries them all); each target repo gets only its own repo:<name>.
 ```
 
 Then ask via `AskUserQuestion`:
