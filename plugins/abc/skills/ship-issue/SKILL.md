@@ -364,7 +364,7 @@ If `CronDelete` fails (entry already gone, job-ID not found, etc.), do not halt 
 Print a concise block the user can scan at a glance:
 
 ```
-/ship-issue wake <timestamp>
+<command-name> wake <timestamp>
 
 Items: <N>
   [merged]      PROJ-65  <PR URL>
@@ -376,7 +376,7 @@ Working: PROJ-66
 Next wake: /loop 6m <command-name> <original-arg>
 ```
 
-`<command-name>` is the captured slash-command name from Phase 0.5 (e.g. `/abc:ship-issue`), not a hardcoded literal — same convention as the self-arm string.
+`<command-name>` — in **both** the title line and the `Next wake:` line — is the captured slash-command name from Phase 0.5 (e.g. `/abc:ship-issue`), not a hardcoded literal; same convention as the self-arm string.
 
 Keep the output short on no-op wakes — the idempotency contract makes per-wake verbosity expensive.
 

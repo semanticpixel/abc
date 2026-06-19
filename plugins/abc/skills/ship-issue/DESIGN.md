@@ -222,7 +222,7 @@ Closing the terminal mid-loop is safe: re-running `/ship-issue <same-arg>` picks
 
 ## What the skill does NOT do
 
-- **Merge.** The skill **never** runs `gh pr merge` / `glab mr merge` — a human merges. The skill drives the PR/MR to green-and-reviewed and waits; after the PR has been green-but-unreviewed-merge-ready for N=5 consecutive `pr-open` wakes it posts a one-time `<!-- ship-issue:note:merge-nudge -->` marker comment, then keeps waiting. The final merge action is always human.
+- **Merge.** The skill **never** runs `gh pr merge` / `glab mr merge` — a human merges. The skill drives the PR/MR to green-and-reviewed and waits; once the last skill commit has been green-but-unreviewed-merge-ready for ~30 min — the skill is stateless and keys off that commit's age (its `%ai` timestamp), not a count of `pr-open` wakes — it posts a one-time `<!-- ship-issue:note:merge-nudge -->` marker comment, then keeps waiting. The final merge action is always human.
 - Merge when `## Validation` exists and verification hasn't succeeded.
 - Silently absorb review comments as scope additions.
 - Retry transient failures without surfacing them.

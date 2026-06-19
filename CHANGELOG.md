@@ -15,6 +15,14 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.10.8] - 2026-06-18
+
+### Changed
+
+- **Reconcile the merge-nudge docs with what the skill actually does + finish the `<command-name>` placeholder sweep** (PATCH — doc/prose only, no `SKILL.md` behavior or `allowed-tools` changes). Two consistency fixes the post-epic review surfaced:
+  - **Merge-nudge mechanism contradiction.** `ship-issue`/`ship-issue-gh` `SKILL.md` trigger the green-but-unreviewed merge-nudge off the **last skill commit's age** (~30 min via its `%ai` timestamp) and state the skill is stateless and keeps **no per-wake counter**. But the DESIGN docs and READMEs still described a **wake counter** ("N=5 consecutive `pr-open` wakes" / "5 consecutive `pr-open` wakes") — an executor implementing from them would wrongly build a counter the skill deliberately doesn't have. Reworded all four sites (`ship-issue/DESIGN.md`, `ship-issue-gh/DESIGN.md`, `ship-issue/README.md`, `ship-issue-gh/README.md`) to the canonical commit-age phrasing. `SKILL.md` is the source of truth and is unchanged.
+  - **Hardcoded command literals in the Phase 8 output block.** The `Next wake:` line already used `<command-name>`, but the block's **title** line still printed the un-namespaced literal (`/ship-issue wake …` / `/ship-issue-gh wake …`). Both now use `<command-name>`, and the trailing note is extended to say the placeholder applies to both the title and the `Next wake:` line. Also fixed the stale illustrative line in `ship-epic/DESIGN.md` (`firing /loop 6m /ship-issue PROJ-104` → `… <worker-command> PROJ-104`) to match the operational Phase 3 path, which already derives `<worker-command>`.
+
 ## [0.10.7] - 2026-06-18
 
 ### Fixed
@@ -385,7 +393,8 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `scripts/validate-plugin.py` + `.github/workflows/validate.yml` — manifest + skill/agent frontmatter validation on every push and PR. Catches JSON drift, version mismatch between `marketplace.json` and `plugin.json`, missing YAML frontmatter, hook executable bit loss. ([#2](https://github.com/semanticpixel/abc/pull/2))
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
-[Unreleased]: https://github.com/semanticpixel/abc/compare/v0.10.7...HEAD
+[Unreleased]: https://github.com/semanticpixel/abc/compare/v0.10.8...HEAD
+[0.10.8]: https://github.com/semanticpixel/abc/compare/v0.10.7...v0.10.8
 [0.10.7]: https://github.com/semanticpixel/abc/compare/v0.10.6...v0.10.7
 [0.10.6]: https://github.com/semanticpixel/abc/compare/v0.10.5...v0.10.6
 [0.10.5]: https://github.com/semanticpixel/abc/compare/v0.10.4...v0.10.5
