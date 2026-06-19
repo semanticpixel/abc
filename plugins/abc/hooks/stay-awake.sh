@@ -15,6 +15,13 @@ set -euo pipefail
 # dedup (don't stack assertions) and teardown (kill the exact PID) never touch
 # another concurrent session's caffeinate. No `pgrep -f` / `pkill -f`.
 #
+# Known race (bounded, self-healing): two near-simultaneous events in the SAME
+# session can both pass the live_pid check before either writes the pidfile,
+# spawning two caffeinate processes and orphaning the first (untracked, so
+# teardown can't kill it). The orphan is harmless — it carries the same `-t TTL`
+# and self-expires within TTL seconds — so it's accepted rather than locked
+# against (flock is unavailable on macOS, the only platform this hook runs on).
+#
 # Environment variables (CLAUDE_ABC_AWAKE_ON_* execute as shell commands):
 #   CLAUDE_ABC_AWAKE_FLAGS         Flags passed to caffeinate (default: -i -m -s)
 #   CLAUDE_ABC_AWAKE_TTL           Assertion lifetime in seconds (default: 900 ≈ 2 loop intervals)
@@ -78,7 +85,12 @@ refresh_awake() {
   # under `set -e` (the caffeinate above has already spawned); degrade to the
   # same graceful no-op posture as the tool-availability guards up top.
   { echo $! > "$PIDFILE"; } 2>/dev/null || true
-  [[ "$was_live" -eq 0 ]] && fire_activate
+  # Use an explicit `if`, NOT `[[ … ]] && fire_activate`: on a warm refresh
+  # was_live=1, so the `[[ ]]` is false and — as the function's last statement —
+  # an `&&` compound would propagate exit 1. Under `set -e` that aborts the hook
+  # before the trailing `exit 0`, surfacing a spurious "non-blocking status code:
+  # No stderr output" on every Stop/UserPromptSubmit after the session's first.
+  if [[ "$was_live" -eq 0 ]]; then fire_activate; fi
 }
 
 stop_awake() {

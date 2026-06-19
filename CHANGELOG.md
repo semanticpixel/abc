@@ -15,6 +15,12 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
+## [0.10.7] - 2026-06-18
+
+### Fixed
+
+- **`stay-awake.sh` no longer emits a spurious hook failure on every warm event** (PATCH — bug fix, hook script only, no `allowed-tools`/event-subscription changes). `refresh_awake()`'s last statement was `[[ "$was_live" -eq 0 ]] && fire_activate`. On a warm refresh (`was_live=1`) the `[[ ]]` is false, so — as the function's final statement — the `&&` compound returned exit 1; under `set -euo pipefail` that aborted the hook before its trailing `exit 0`, and Claude Code surfaced `Stop hook error: Failed with non-blocking status code: No stderr output` (and the same for `UserPromptSubmit`) on every turn after the session's first. The assertion was already refreshed, so the noise was cosmetic — but constant. Replaced the `&&` one-liner with an explicit `if … then … fi`, which returns 0 when the guard is false. Audited the rest of the script for the same `set -e` + short-circuit-last-statement footgun (`live_pid`, `stop_awake`, the `fire_*` helpers) — all already return 0 on their normal paths; line 81 was the only offender. Added a hermetic regression test (`scripts/test-stay-awake.sh`) that asserts exit 0 across cold + repeated warm events and skips gracefully where `jq`/`caffeinate` are absent. Also documented the known, self-healing same-session pidfile race in the header comment block.
+
 ## [0.10.6] - 2026-06-18
 
 ### Changed
@@ -379,7 +385,8 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `scripts/validate-plugin.py` + `.github/workflows/validate.yml` — manifest + skill/agent frontmatter validation on every push and PR. Catches JSON drift, version mismatch between `marketplace.json` and `plugin.json`, missing YAML frontmatter, hook executable bit loss. ([#2](https://github.com/semanticpixel/abc/pull/2))
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
-[Unreleased]: https://github.com/semanticpixel/abc/compare/v0.10.6...HEAD
+[Unreleased]: https://github.com/semanticpixel/abc/compare/v0.10.7...HEAD
+[0.10.7]: https://github.com/semanticpixel/abc/compare/v0.10.6...v0.10.7
 [0.10.6]: https://github.com/semanticpixel/abc/compare/v0.10.5...v0.10.6
 [0.10.5]: https://github.com/semanticpixel/abc/compare/v0.10.4...v0.10.5
 [0.10.4]: https://github.com/semanticpixel/abc/compare/v0.10.3...v0.10.4
