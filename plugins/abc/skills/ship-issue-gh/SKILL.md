@@ -334,7 +334,7 @@ The loop halts when any of:
 Print a concise block:
 
 ```
-/ship-issue-gh wake <timestamp>
+<command-name> wake <timestamp>
 
 Items: <N>
   [merged]      <owner>/<repo>#42  <PR URL>
@@ -346,7 +346,7 @@ Working: <owner>/<repo>#43
 Next wake: /loop 6m <command-name> <original-arg>
 ```
 
-`<command-name>` is the captured slash-command name from Phase 0.5 (e.g. `/abc:ship-issue-gh`), not a hardcoded literal — same convention as the self-arm string.
+`<command-name>` — in **both** the title line and the `Next wake:` line — is the captured slash-command name from Phase 0.5 (e.g. `/abc:ship-issue-gh`), not a hardcoded literal; same convention as the self-arm string.
 
 Keep the output short on no-op wakes.
 

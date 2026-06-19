@@ -113,7 +113,7 @@ Parent: PROJ-100  (3 of 5 merged)
 [merged]    PROJ-101  <PR URL>
 [merged]    PROJ-102  <PR URL>
 [in-flight] PROJ-103  pr-open  <PR URL>
-[ready]     PROJ-104  → firing /loop 6m /ship-issue PROJ-104
+[ready]     PROJ-104  → firing /loop 6m <worker-command> PROJ-104
 [waiting]   PROJ-105  blocked by PROJ-104
 
 Next wake: /loop 10m /ship-epic PROJ-100
