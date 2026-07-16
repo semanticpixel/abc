@@ -120,11 +120,23 @@ the corrected code here
 
 ### Tests
 
+Two questions decide most test value:
+
+- **Silent-break:** would this test still pass if the feature were completely broken in a way a user would notice? If yes, it isn't testing the feature.
+- **Refactor-fragility:** would a behavior-preserving refactor break it? If yes, it's coupled to implementation, not behavior — prefer role/text/accessible queries over internal class names and call counts.
+
+Coverage is an output, not a goal — flag tests that exist only to raise a number.
+
 - New component/logic without a test file.
 - Tests on implementation details (internal state) instead of behavior.
 - Excessive snapshot tests (prefer explicit assertions).
-- Test files with no assertions.
+- Test files with no assertions, or `toBeDefined()` / `not.toThrow()` / "renders without crashing" with no behavioral claim.
 - Order-dependent or shared-mutable-state tests.
+- **Literal restatement** — asserting a value equals the constant/config it was read from (`expect(SAVE_LABEL).toBe('Save')`); can only fail if someone edits both source and test.
+- **Fixture/mock self-validation** — asserting a fixture's own values, or type-guaranteed shapes at runtime (`toBeInstanceOf(Array)`, `toHaveProperty` on typed data). If the type system guarantees it, the runtime assertion adds nothing.
+- **Mock-echoing** — asserting a value a mocked dependency was configured to return. You're testing the mock, not the code.
+- **Trivial wrapper/passthrough** — asserting a one-line wrapper renders a given tag or forwards `className`/`children`/arbitrary props. (Keep it when the prop carries real behavior — an `aria-label`, a semantic element choice.)
+- **Cross-layer duplication** — the same behavior asserted at both the unit and integration layer. Own it at the layer that's cheapest to protect (pure/branch logic → unit; DOM/wiring/a11y → integration) and assert it once.
 
 ### Code quality
 

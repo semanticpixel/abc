@@ -15,7 +15,11 @@ Both manifests (`.claude-plugin/marketplace.json` and `plugins/abc/.claude-plugi
 
 ## [Unreleased]
 
-## [0.10.8] - 2026-06-18
+## [0.10.9] - 2026-07-15
+
+### Changed
+
+- **reviewer: expand test-quality checks with silent-break/refactor-fragility heuristics and an anti-pattern catalog** (PATCH — agent prompt only, no output-contract, tools, or `allowed-tools` changes). The `### Tests` section gains two decision heuristics (silent-break: would the test still pass with the feature broken?; refactor-fragility: would a behavior-preserving refactor break it?), a "coverage is an output, not a goal" framing, and five anti-pattern bullets: literal restatement, fixture/mock self-validation, mock-echoing, trivial wrapper/passthrough (with the meaningful-prop exception), and cross-layer duplication. The existing "no assertions" bullet also now names the coverage-padding variants (`toBeDefined()` / `not.toThrow()` / "renders without crashing"). Distilled from a real-suite audit that removed ~150+ low-value tests; a CI dry-run showed these patterns produce ~80% false positives under regex/AST detection, so they belong in the reasoning reviewer, not a mechanical gate. All map to the existing `category: test` — no orchestrating-skill changes needed.
 
 ### Changed
 
@@ -394,6 +398,7 @@ These landed on top of the initial 0.4.0 release without bumping — they're doc
 - `examples/PLAN-avatar-component.md` — canonical multi-repo sample PLAN. The exact format `/abc:plan` emits and `/abc:scaffold-sub-issues` consumes. ([#3](https://github.com/semanticpixel/abc/pull/3))
 
 [Unreleased]: https://github.com/semanticpixel/abc/compare/v0.10.8...HEAD
+[0.10.9]: https://github.com/semanticpixel/abc/compare/v0.10.8...v0.10.9
 [0.10.8]: https://github.com/semanticpixel/abc/compare/v0.10.7...v0.10.8
 [0.10.7]: https://github.com/semanticpixel/abc/compare/v0.10.6...v0.10.7
 [0.10.6]: https://github.com/semanticpixel/abc/compare/v0.10.5...v0.10.6
